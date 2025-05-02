@@ -1,0 +1,4831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Enhanced Cleverbot AI Trainer</title>
+  <script src="https://cdn.jsdelivr.net/npm/brain.js@2.0.0-beta.2/dist/brain-browser.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css" rel="stylesheet" />
+  <!-- Replace CDN Tailwind with local version in production -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+  <style>
+    #memoryMap {
+      cursor: grab;
+    }
+    #memoryMap:active {
+      cursor: grabbing;
+    }
+    .similarity-badge {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.5rem;
+      background: #e5e7eb;
+      margin-left: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-tr from-indigo-400 via-purple-400 to-pink-400 min-h-screen flex flex-col items-center justify-center p-4">
+  
+  <div class="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-4xl space-y-4">
+    <h1 class="text-4xl font-bold text-center text-indigo-700">Enhanced Cleverbot Trainer v3</h1>
+    <p>Grab the training files here: https://jcmc.serveminecraft.net/cleverbot2/data and /models/</p>
+    <div id="chatbox" class="border p-4 rounded-xl h-72 overflow-y-auto bg-gray-100"></div>
+
+    <div id="typingIndicator" class="text-gray-500 text-sm hidden">Bot is thinking...</div>
+
+    <div class="flex">
+      <input id="userInput" type="text" placeholder="Type your message..." 
+        class="flex-1 p-3 border rounded-l-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        onkeydown="if(event.key === 'Enter') sendInput()">
+      <button onclick="sendInput()" 
+        class="bg-indigo-600 text-white p-3 rounded-r-xl hover:bg-indigo-700 transition">Send</button>
+    </div>
+
+    <div class="mt-6">
+      <div class="flex justify-between items-center mb-2">
+        <h2 class="text-2xl font-semibold text-indigo-600">Enhanced Memory Map</h2>
+        <div class="flex gap-2">
+          <button onclick="resetView()" class="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition">
+            Reset View
+          </button>
+          <button onclick="togglePhysics()" class="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition">
+            Toggle Physics
+          </button>
+        </div>
+      </div>
+      <svg id="memoryMap" class="border rounded-xl bg-gray-100" width="100%" height="400"></svg>
+    </div>
+
+    <!-- Similarity analysis display -->
+    <div class="mt-4 p-4 border rounded-xl bg-gray-50">
+      <h3 class="font-semibold text-indigo-600 mb-2">Similarity Insights</h3>
+      <div id="similarityInsights" class="text-sm text-gray-700"></div>
+    </div>
+    
+    <!-- Context and Sentence Structures -->
+    <div class="mt-4 p-4 border rounded-xl bg-gray-50">
+      <h3 class="font-semibold text-indigo-600 mb-2">Context & Sentence Structures</h3>
+      <div class="flex gap-4">
+        <div class="flex-1">
+          <h4 class="text-sm font-medium text-gray-700 mb-2">Sentence Structures</h4>
+          <div id="sentenceStructuresDisplay" class="text-xs text-gray-600 h-32 overflow-y-auto bg-white p-2 rounded"></div>
+        </div>
+        <div class="flex-1">
+          <h4 class="text-sm font-medium text-gray-700 mb-2">Contextual Memory</h4>
+          <div id="contextMemoryDisplay" class="text-xs text-gray-600 h-32 overflow-y-auto bg-white p-2 rounded"></div>
+        </div>
+      </div>
+      <div class="mt-2">
+        <h4 class="text-sm font-medium text-gray-700 mb-2">Visualization Controls</h4>
+        <div class="flex gap-2">
+          <button id="toggleContextVisBtn" class="bg-indigo-100 text-indigo-600 px-3 py-1 text-sm rounded-lg hover:bg-indigo-200 transition">
+            Show Context Network
+          </button>
+          <button id="clearStructuresBtn" class="bg-red-100 text-red-600 px-3 py-1 text-sm rounded-lg hover:bg-red-200 transition">
+            Clear Structures
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex gap-4 mt-4">
+    <button onclick="saveBrain()" 
+      class="bg-green-500 text-white px-4 py-2 rounded-xl hover:bg-green-600 transition">
+      Save Brain
+    </button>
+    <input type="file" id="brainLoader" accept=".json" class="hidden" onchange="loadBrain(event)">
+    <button onclick="document.getElementById('brainLoader').click()" 
+      class="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 transition">
+      Load Brain
+    </button>
+    <button onclick="decayButton()" 
+      class="bg-red-500 text-white px-4 py-2 rounded-xl hover:bg-red-600 transition">
+      Decay Memory
+    </button>
+    <button onclick="toggleLookupMode()" id="lookupToggle"
+      class="bg-purple-500 text-white px-4 py-2 rounded-xl hover:bg-purple-600 transition">
+      Enable Word Lookup
+    </button>
+  </div>
+
+  <!-- Word Lookup Modal -->
+  <div id="wordLookupModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold text-indigo-700">Word Lookup Results</h3>
+        <button onclick="closeLookupModal()" class="text-gray-500 hover:text-gray-700">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div id="lookupContent" class="text-gray-700">
+  <div class="mt-4 p-4 border rounded-xl bg-gradient-to-r from-purple-100 to-indigo-100">
+    <h3 class="font-semibold text-purple-700 mb-2">Meta-Cognition System</h3>
+    <div class="flex flex-col gap-2">
+      <div class="flex justify-between">
+        <div class="text-sm text-purple-700">Self-Reflection Depth: <span id="reflectionLevel">3</span></div>
+        <div class="flex gap-2">
+          <button id="toggleMetaCognition" class="bg-purple-200 text-purple-700 px-3 py-1 rounded-lg hover:bg-purple-300 transition">
+            Enable Meta-Cognition
+          </button>
+          <button id="analyzePerformance" class="bg-indigo-200 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-300 transition">
+            Analyze Performance
+          </button>
+        </div>
+      </div>
+      <div class="mt-2">
+        <div class="w-full bg-gray-200 rounded-full h-2.5">
+          <div class="bg-purple-600 h-2.5 rounded-full" id="metaCognitionProgress" style="width: 25%"></div>
+        </div>
+      </div>
+      <div id="metaCognitionInsights" class="text-xs text-gray-700 mt-1 h-24 overflow-y-auto bg-white p-2 rounded">
+        Meta-cognition system ready. Enable to activate enhanced recursive thinking capabilities.
+      </div>
+    </div>
+  </div>
+</div>
+    </div>
+  </div>
+
+  <script>
+    const chatbox = document.getElementById('chatbox');
+    const userInput = document.getElementById('userInput');
+    const typingIndicator = document.getElementById('typingIndicator');
+    const svg = d3.select("#memoryMap");
+    const similarityInsights = document.getElementById('similarityInsights');
+    
+    let physicsEnabled = true;
+    let lookupModeEnabled = false;
+    let learningMultiplier = 1.0;
+
+    // Enhanced phrase mapping
+    const phraseMap = new Map();
+
+    const net = new brain.recurrent.LSTM();
+    // Add this to your main JavaScript file to enable server-side model storage
+
+// Configure the server URL
+const SERVER_URL = 'https://jcmc.serveminecraft.net/cleverbot2'; // Change this to your actual server URL
+const SAVE_ENDPOINT = `${SERVER_URL}/savemodeldata.php`;
+const GET_ENDPOINT = `${SERVER_URL}/getmodeldata.php`;
+
+// Set to true if you want to fetch model data on startup
+// Set to false to start with local data
+const USE_SERVER_DATA_ON_STARTUP = true;
+
+// How often to sync data with server (in milliseconds)
+// Default: Every 5 minutes
+const SYNC_INTERVAL = 5 * 60 * 1000;
+
+// Track if we need to save (dirty flag)
+let modelDataDirty = false;
+
+// Function to save all model data to server
+async function saveModelDataToServer() {
+  if (!modelDataDirty) {
+    console.log('No changes to save to server');
+    return;
+  }
+
+  try {
+    // Prepare serializable copies of data
+    const serializablePhraseMap = [...phraseMap].map(([key, valueMap]) => 
+      [key, Object.fromEntries(valueMap)]
+    );
+    
+    const serializableStructures = contextMapper.sentenceStructures.map(structure => ({
+      ...structure,
+      contentMap: Array.from(structure.contentMap.entries())
+    }));
+    
+    const serializableMemory = Array.from(contextMapper.contextualMemory.entries())
+      .map(([key, valueSet]) => [key, Array.from(valueSet)]);
+
+    // Prepare LSTM model
+    const modelJSON = net.toJSON();
+    
+    // Construct the data to send
+    const dataToSend = {
+      trainingData: trainingData,
+      phraseMap: serializablePhraseMap,
+      sentenceStructures: serializableStructures,
+      contextualMemory: serializableMemory,
+      brainModel: modelJSON
+    };
+    
+    // Show saving indicator (you can add this to the UI if desired)
+    console.log('Saving model data to server...');
+    
+    // Send data to server
+    const response = await fetch(SAVE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(dataToSend)
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('Model data saved successfully!', result.stats);
+      modelDataDirty = false;
+      
+      // Update status indicator in UI (optional)
+      updateSyncStatusUI(true);
+    } else {
+      console.error('Failed to save model data:', result.message);
+      updateSyncStatusUI(false);
+    }
+  } catch (error) {
+    console.error('Error saving model data:', error);
+    updateSyncStatusUI(false);
+  }
+}
+
+// Function to load model data from server
+async function loadModelDataFromServer() {
+  try {
+    console.log('Loading model data from server...');
+    
+    // Fetch data from server
+    const response = await fetch(GET_ENDPOINT);
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      console.log('Model data loaded from server:', result.stats);
+      
+      // Process training data
+      if (result.data.trainingData && result.data.trainingData.length > 0) {
+        trainingData = result.data.trainingData;
+        console.log(`Loaded ${trainingData.length} training examples`);
+      }
+      
+      // Process phrase map
+      if (result.data.phraseMap && result.data.phraseMap.length > 0) {
+        phraseMap.clear();
+        result.data.phraseMap.forEach(([key, value]) => {
+          phraseMap.set(key, new Map(Object.entries(value)));
+        });
+        console.log(`Loaded phrase map with ${phraseMap.size} entries`);
+      }
+      
+      // Process sentence structures
+      if (result.data.sentenceStructures && result.data.sentenceStructures.length > 0) {
+        contextMapper.sentenceStructures = result.data.sentenceStructures.map(structure => {
+          return {
+            ...structure,
+            contentMap: new Map(structure.contentMap)
+          };
+        });
+        console.log(`Loaded ${contextMapper.sentenceStructures.length} sentence structures`);
+      }
+      
+      // Process contextual memory
+      if (result.data.contextualMemory && result.data.contextualMemory.length > 0) {
+        contextMapper.contextualMemory.clear();
+        result.data.contextualMemory.forEach(([key, valueArray]) => {
+          contextMapper.contextualMemory.set(key, new Set(valueArray));
+        });
+        console.log(`Loaded contextual memory with ${contextMapper.contextualMemory.size} entries`);
+      }
+      
+      // Process brain model
+      if (result.data.brainModel) {
+        net.fromJSON(result.data.brainModel);
+        console.log('Loaded brain model from server');
+      }
+      
+      // Update the graph visualization
+      drawGraph();
+      updateContextVisualizations();
+      updateSyncStatusUI(true);
+      
+      return true;
+    } else {
+      console.log('No model data available on server or error loading');
+      updateSyncStatusUI(false);
+      return false;
+    }
+  } catch (error) {
+    console.error('Error loading model data:', error);
+    updateSyncStatusUI(false);
+    return false;
+  }
+}
+
+// Override the saveMemory function to mark data as dirty
+const originalSaveMemory = saveMemory;
+window.saveMemory = function() {
+  // Call the original function
+  originalSaveMemory();
+  
+  // Mark data as dirty (needs to be saved to server)
+  modelDataDirty = true;
+};
+
+// Add sync status UI
+function addSyncStatusUI() {
+  const controlsDiv = document.querySelector('.flex.gap-4.mt-4');
+  if (controlsDiv) {
+    const syncStatus = document.createElement('div');
+    syncStatus.id = 'syncStatus';
+    syncStatus.className = 'flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-xl';
+    syncStatus.innerHTML = `
+      <div class="w-3 h-3 rounded-full bg-gray-400" id="syncIndicator"></div>
+      <span class="text-sm text-gray-600" id="syncText">Not synced</span>
+      <button id="syncNowButton" class="text-xs bg-indigo-100 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-200">
+        Sync Now
+      </button>
+    `;
+    controlsDiv.appendChild(syncStatus);
+    
+    // Add sync now button handler
+    document.getElementById('syncNowButton').addEventListener('click', () => {
+      saveModelDataToServer().catch(console.error);
+    });
+  }
+}
+
+// Update sync status UI
+function updateSyncStatusUI(success) {
+  const indicator = document.getElementById('syncIndicator');
+  const text = document.getElementById('syncText');
+  
+  if (indicator && text) {
+    if (success) {
+      indicator.className = 'w-3 h-3 rounded-full bg-green-500';
+      text.textContent = 'Synced: ' + new Date().toLocaleTimeString();
+      text.className = 'text-sm text-green-600';
+    } else {
+      indicator.className = 'w-3 h-3 rounded-full bg-red-500';
+      text.textContent = 'Sync failed';
+      text.className = 'text-sm text-red-600';
+    }
+  }
+}
+
+// Initialize the UI and sync system
+document.addEventListener('DOMContentLoaded', async function() {
+  // Add sync status UI
+  addSyncStatusUI();
+  
+  // Load model data from server on startup if configured
+  if (USE_SERVER_DATA_ON_STARTUP) {
+    try {
+      await loadModelDataFromServer();
+    } catch (error) {
+      console.error('Error loading server data on startup:', error);
+    }
+  }
+  
+  // Set up periodic sync
+  setInterval(() => {
+    if (modelDataDirty) {
+      saveModelDataToServer().catch(console.error);
+    }
+  }, SYNC_INTERVAL);
+});
+
+// Override sendInput to mark data as dirty after learning
+const originalSendInput = window.sendInput;
+window.sendInput = async function() {
+  await originalSendInput.apply(this, arguments);
+  modelDataDirty = true;
+};
+    // Enhanced Context Mapper for sentence structures and context tracking
+    class EnhancedContextMapper {
+      constructor() {
+        this.sentenceStructures = [];
+        this.contextualMemory = new Map();
+        this.maxStructures = 200;
+        this.maxContextsPerWord = 30;
+        this.nlpPatterns = this.initializeNLPPatterns();
+      }
+      
+      // Initialize NLP patterns for sentence structure analysis
+      initializeNLPPatterns() {
+        return {
+          questionPatterns: [
+            /^(what|who|where|when|why|how).+\?$/i,
+            /^(is|are|was|were|do|does|did|can|could|will|would|should).+\?$/i,
+            /^(have|has|had).+\?$/i
+          ],
+          statementPatterns: [
+            /^(i|you|he|she|it|we|they).+\.$/i,
+            /^[A-Z][^?!.]*\.$/i
+          ],
+          commandPatterns: [
+            /^(please |kindly )?(tell|show|explain|describe|define).+$/i,
+            /^(can|could|would) you.+$/i
+          ]
+        };
+      }
+      
+      // Extract sentence structure with parts of speech
+      extractSentenceStructure(sentence) {
+        // Basic cleaning
+        const cleanedSentence = sentence.trim()
+          .replace(/[,.!?;:"""''()]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .toLowerCase();
+        
+        const words = cleanedSentence.split(' ');
+        
+        // Analyze sentence type
+        let sentenceType = "statement";
+        for (const pattern of this.nlpPatterns.questionPatterns) {
+          if (pattern.test(sentence)) {
+            sentenceType = "question";
+            break;
+          }
+        }
+        for (const pattern of this.nlpPatterns.commandPatterns) {
+          if (pattern.test(sentence)) {
+            sentenceType = "command";
+            break;
+          }
+        }
+        
+        // Basic POS tagging
+        const structure = words.map(word => {
+          // Common articles
+          if (['a', 'an', 'the'].includes(word)) return '[ARTICLE]';
+          
+          // Common prepositions
+          if (['in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'of'].includes(word)) 
+            return '[PREPOSITION]';
+          
+          // Common pronouns
+          if (['i', 'me', 'my', 'mine', 'you', 'your', 'yours', 'he', 'him', 'his', 
+               'she', 'her', 'hers', 'it', 'its', 'we', 'us', 'our', 'ours', 
+               'they', 'them', 'their', 'theirs'].includes(word)) 
+            return '[PRONOUN]';
+          
+          // Common conjunctions
+          if (['and', 'but', 'or', 'nor', 'for', 'yet', 'so', 'because', 'although', 
+               'since', 'unless', 'while', 'where', 'if'].includes(word)) 
+            return '[CONJUNCTION]';
+          
+          // Common adverbs
+          if (word.endsWith('ly')) return '[ADVERB]';
+          
+          // Common verbs (simplified)
+          if (word.endsWith('ing')) return '[VERB_ING]';
+          if (word.endsWith('ed')) return '[VERB_PAST]';
+          if (['is', 'am', 'are', 'was', 'were', 'be', 'being', 'been',
+               'do', 'does', 'did', 'have', 'has', 'had', 'can', 'could',
+               'will', 'would', 'shall', 'should', 'may', 'might', 'must'].includes(word)) 
+            return '[VERB_HELPER]';
+          
+          // Special cases for question words
+          if (['what', 'who', 'where', 'when', 'why', 'how'].includes(word)) 
+            return '[QUESTION_WORD]';
+          
+          // Default case - use as content word placeholder
+          return '[CONTENT]';
+        });
+        
+        // Add sentence type marker
+        structure.push(`[${sentenceType.toUpperCase()}]`);
+        
+        return {
+          type: sentenceType,
+          structure: structure,
+          original: sentence
+        };
+      }
+      
+      // Record a new sentence structure
+      recordSentenceStructure(sentence, contentWords = []) {
+        const structure = this.extractSentenceStructure(sentence);
+        
+        // Only add if unique
+        if (!this.sentenceStructures.some(s => 
+            JSON.stringify(s.structure) === JSON.stringify(structure.structure))) {
+            
+          // Store meaningful content words with their positions in the structure
+          const structureWithContent = {
+            ...structure,
+            contentMap: new Map()
+          };
+          
+          // Map content words to their positions
+          structure.structure.forEach((pos, index) => {
+            if (pos === '[CONTENT]') {
+              const wordIndex = structure.structure.slice(0, index)
+                .filter(p => p === '[CONTENT]').length;
+              
+              if (contentWords[wordIndex]) {
+                structureWithContent.contentMap.set(index, contentWords[wordIndex]);
+              }
+            }
+          });
+          
+          this.sentenceStructures.push(structureWithContent);
+          
+          // Limit storage size
+          if (this.sentenceStructures.length > this.maxStructures) {
+            this.sentenceStructures.shift();
+          }
+        }
+      }
+      
+      // Process Wikipedia text and extract sentence structures and context
+      processWikipediaText(text, topic) {
+        // Extract sentences
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+        
+        // Process each sentence
+        sentences.forEach(sentence => {
+          // Record sentence structure
+          const cleanSentence = sentence.trim();
+          const words = cleanSentence.toLowerCase()
+                       .replace(/[,.!?;:"""''()]/g, ' ')
+                       .replace(/\s+/g, ' ')
+                       .split(' ')
+                       .filter(w => w.length > 2);
+          
+          // Extract meaningful content words (non-stopwords longer than 3 chars)
+          const contentWords = words.filter(word => 
+            !['the', 'and', 'for', 'that', 'with', 'this', 'from', 'have', 'not'].includes(word)
+          );
+          
+          // Record the sentence structure
+          this.recordSentenceStructure(cleanSentence, contentWords);
+          
+          // Update contextual memory with topic as key
+          contentWords.forEach(word => {
+            if (!this.contextualMemory.has(word)) {
+              this.contextualMemory.set(word, new Set());
+            }
+            
+            // Add the topic and other content words as context
+            this.contextualMemory.get(word).add(topic);
+            contentWords.forEach(contextWord => {
+              if (word !== contextWord) {
+                this.contextualMemory.get(word).add(contextWord);
+              }
+            });
+            
+            // Limit memory size
+            if (this.contextualMemory.get(word).size > this.maxContextsPerWord) {
+              // Remove oldest entries (convert set to array, slice, convert back)
+              const contexts = Array.from(this.contextualMemory.get(word));
+              this.contextualMemory.set(word, 
+                new Set(contexts.slice(contexts.length - this.maxContextsPerWord)));
+            }
+          });
+        });
+        
+        return {
+          sentencesProcessed: sentences.length,
+          structuresAdded: this.sentenceStructures.length,
+          contextualConnections: this.countContextualConnections()
+        };
+      }
+      
+      // Count total contextual connections
+      countContextualConnections() {
+        let count = 0;
+        for (const contexts of this.contextualMemory.values()) {
+          count += contexts.size;
+        }
+        return count;
+      }
+      
+      // Get related context for input
+      getRelatedContext(input) {
+        const words = input.toLowerCase()
+                     .replace(/[,.!?;:"""''()]/g, ' ')
+                     .replace(/\s+/g, ' ')
+                     .split(' ')
+                     .filter(w => w.length > 2);
+        
+        // Collect all related contexts
+        const relatedContext = new Set();
+        
+        words.forEach(word => {
+          if (this.contextualMemory.has(word)) {
+            const contexts = this.contextualMemory.get(word);
+            contexts.forEach(context => relatedContext.add(context));
+          }
+        });
+        
+        return Array.from(relatedContext);
+      }
+      
+      // Generate a response using appropriate sentence structure and context
+      generateContextualResponse(input) {
+        // Extract input type and analyze
+        const inputStructure = this.extractSentenceStructure(input);
+        const relatedContext = this.getRelatedContext(input);
+        
+        // Find the most appropriate sentence structure to use
+        // First try to match the sentence type
+        let matchingStructures = this.sentenceStructures.filter(s => 
+          s.type !== inputStructure.type && // Use a different type for response
+          s.structure.length > 3 // Ensure reasonable complexity
+        );
+        
+        // If no structures, use all structures
+        if (matchingStructures.length === 0) {
+          matchingStructures = this.sentenceStructures;
+        }
+        
+        // No structures available yet
+        if (matchingStructures.length === 0) {
+          return "I'm still learning sentence structures. Please tell me more.";
+        }
+        
+        // Pick a random structure from matches
+        const selectedStructure = matchingStructures[
+          Math.floor(Math.random() * matchingStructures.length)
+        ];
+        
+        // Fill in the structure with contextual words
+        const response = this.fillStructureWithContext(selectedStructure, relatedContext);
+        
+        return response;
+      }
+      
+      // Fill a sentence structure with contextual words
+      fillStructureWithContext(structure, contextWords) {
+        // Clone the structure array
+        const filledStructure = [...structure.structure];
+        
+        // Get content word positions
+        const contentPositions = filledStructure
+          .map((type, index) => type === '[CONTENT]' ? index : -1)
+          .filter(pos => pos !== -1);
+        
+        // Fill content positions with context words or defaults
+        contentPositions.forEach((position, index) => {
+          // Try to use existing content mapping first
+          if (structure.contentMap && structure.contentMap.has(position)) {
+            filledStructure[position] = structure.contentMap.get(position);
+            return;
+          }
+          
+          // If we have context words, use them
+          if (contextWords.length > 0) {
+            const contextIndex = Math.floor(Math.random() * contextWords.length);
+            filledStructure[position] = contextWords[contextIndex];
+            
+            // Remove used word to avoid repetition
+            contextWords.splice(contextIndex, 1);
+          } else {
+            // Fallback content words if no context available
+            const fallbacks = ['thing', 'idea', 'concept', 'information', 'knowledge', 
+                              'understanding', 'perspective', 'approach', 'situation'];
+            filledStructure[position] = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+          }
+        });
+        
+        // Replace structure tags with actual words
+        return this.convertStructureToSentence(filledStructure);
+      }
+      
+      // Convert structure array to proper sentence
+      convertStructureToSentence(structureArray) {
+        // Remove the sentence type marker
+        const sentence = structureArray
+          .filter(token => !token.includes('QUESTION]') && 
+                          !token.includes('STATEMENT]') && 
+                          !token.includes('COMMAND]'))
+          .map((token, index) => {
+            // Handle known structure tags
+            if (token === '[ARTICLE]') {
+              return ['a', 'the'][Math.floor(Math.random() * 2)];
+            }
+            if (token === '[PREPOSITION]') {
+              return ['in', 'on', 'with', 'about', 'for'][Math.floor(Math.random() * 5)];
+            }
+            if (token === '[PRONOUN]') {
+              return ['I', 'you', 'it', 'they'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[CONJUNCTION]') {
+              return ['and', 'but', 'or', 'because'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[VERB_HELPER]') {
+              return ['is', 'are', 'can', 'will'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[VERB_ING]') {
+              return ['exploring', 'considering', 'analyzing', 'understanding'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[VERB_PAST]') {
+              return ['learned', 'discovered', 'found', 'observed'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[ADVERB]') {
+              return ['interestingly', 'carefully', 'notably', 'significantly'][Math.floor(Math.random() * 4)];
+            }
+            if (token === '[QUESTION_WORD]') {
+              return ['what', 'why', 'how'][Math.floor(Math.random() * 3)];
+            }
+            
+            // Return the token itself if it's a content word or unknown tag
+            return token;
+          });
+        
+        // Capitalize first letter and create proper sentence
+        let result = sentence.join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        // Add proper ending punctuation
+        if (!result.endsWith('.') && !result.endsWith('?') && !result.endsWith('!')) {
+          if (structureArray.includes('[QUESTION]')) {
+            result += '?';
+          } else if (structureArray.includes('[COMMAND]')) {
+            result += '!';
+          } else {
+            result += '.';
+          }
+        }
+        
+        // Capitalize first letter
+        return result.charAt(0).toUpperCase() + result.slice(1);
+      }
+    }
+
+    // Create global context mapper instance
+    const contextMapper = new EnhancedContextMapper();
+    
+    // Contextual Response Generator with TensorFlow
+    class ContextualResponseGenerator {
+      constructor() {
+        this.embeddingDim = 128;
+        this.maxSequenceLength = 20;
+        this.vocabSize = 0;
+        this.wordIndex = {};
+        this.indexToWord = {};
+        this.contextModel = null;
+      }
+
+      // Preprocess text for neural network input
+      preprocessText(text) {
+        return text.toLowerCase()
+          .replace(/[^\w\s]/g, '')
+          .split(/\s+/)
+          .filter(token => token.length > 0);
+      }
+
+      // Build vocabulary from training data
+      buildVocabulary(trainingData) {
+        // Reset existing vocabulary
+        this.wordIndex = {};
+        this.indexToWord = {};
+
+        const allWords = trainingData.flatMap(item => 
+          this.preprocessText(item.input).concat(this.preprocessText(item.output))
+        );
+        
+        const uniqueWords = [...new Set(allWords)];
+        this.vocabSize = uniqueWords.length + 1; // +1 for padding
+        
+        // Create word to index and index to word mappings
+        uniqueWords.forEach((word, index) => {
+          this.wordIndex[word] = index + 1; // 0 reserved for padding
+          this.indexToWord[index + 1] = word;
+        });
+      }
+
+      // Convert text to sequence of indices
+      textToSequence(text) {
+        const tokens = this.preprocessText(text);
+        return tokens.map(token => 
+          this.wordIndex[token] || 0 // 0 for unknown words
+        ).slice(0, this.maxSequenceLength);
+      }
+
+      // Pad sequences to fixed length
+      padSequences(sequences) {
+        return sequences.map(seq => {
+          if (seq.length < this.maxSequenceLength) {
+            return seq.concat(
+              Array(this.maxSequenceLength - seq.length).fill(0)
+            );
+          }
+          return seq.slice(0, this.maxSequenceLength);
+        });
+      }
+
+      // Create contextual embedding model
+      createContextModel() {
+        // Use tf.sequential() from global TensorFlow object
+        const model = tf.sequential();
+        
+        // Embedding layer
+        model.add(tf.layers.embedding({
+          inputDim: this.vocabSize,
+          outputDim: this.embeddingDim,
+          inputLength: this.maxSequenceLength
+        }));
+        
+        // Global average pooling
+        model.add(tf.layers.globalAveragePooling1d({}));
+        
+        // Dense layers for context understanding
+        model.add(tf.layers.dense({
+          units: 64,
+          activation: 'relu'
+        }));
+        
+        model.add(tf.layers.dense({
+          units: 32,
+          activation: 'relu'
+        }));
+        
+        // Output layer for context representation
+        model.add(tf.layers.dense({
+          units: this.embeddingDim,
+          activation: 'tanh'
+        }));
+        
+        model.compile({
+          optimizer: 'adam',
+          loss: 'meanSquaredError'
+        });
+        
+        return model;
+      }
+
+      // Contextual filler sentence generators
+      generateContextualFillers() {
+        return [
+          "Let me think about that for a moment...",
+          "Interesting perspective. Context suggests...",
+          "Based on what you've shared, I'm processing...",
+          "Analyzing the nuances of your statement...",
+          "Connecting the dots in your message...",
+          "Interpreting the deeper meaning...",
+          "Considering the context carefully...",
+          "Reflecting on the subtle implications...",
+          "Mapping out the contextual landscape...",
+          "Synthesizing insights from your input..."
+        ];
+      }
+
+      // Generate contextual filler sentence
+      generateContextSentence(inputText, trainingData) {
+        // Ensure vocabulary is built
+        if (Object.keys(this.wordIndex).length === 0) {
+          this.buildVocabulary(trainingData);
+        }
+        
+        // Create context model if not exists
+        if (!this.contextModel) {
+          this.contextModel = this.createContextModel();
+        }
+        
+        // Convert input to sequence
+        const inputSequence = this.textToSequence(inputText);
+        const paddedSequence = this.padSequences([inputSequence])[0];
+        
+        // Convert to tensor
+        const inputTensor = tf.tensor2d([paddedSequence], [1, this.maxSequenceLength]);
+        
+        try {
+          // Generate context embedding
+          const contextEmbedding = this.contextModel.predict(inputTensor);
+          
+          // Get contextual fillers
+          const fillers = this.generateContextualFillers();
+          
+          // Select a filler based on some characteristic of the embedding
+          const embeddingData = contextEmbedding.dataSync();
+          const avgEmbedding = embeddingData.reduce((a, b) => a + b, 0) / embeddingData.length;
+          
+          // Use the average embedding to deterministically select a filler
+          const fillerIndex = Math.floor(Math.abs(avgEmbedding * 10) % fillers.length);
+          
+          return fillers[fillerIndex];
+        } catch (error) {
+          console.error('Context generation error:', error);
+          // Fallback to a generic filler
+          return "Let me process that for a moment...";
+        }
+      }
+    }
+
+    // Instantiate the context generator
+    const contextGenerator = new ContextualResponseGenerator();
+    
+    class EnhancedWikipediaLearner {
+      constructor() {
+        this.knowledgeGraph = new Map();
+        this.sentenceStructures = [];
+        this.maxSentenceStructures = 100;
+      }
+
+      // Extract linguistic patterns from text
+      extractSentenceStructures(text) {
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+        
+        sentences.forEach(sentence => {
+          // Basic part-of-speech tagging and structure extraction
+          const words = this.tokenizeSentence(sentence);
+          const structure = this.analyzeSentenceStructure(words);
+          
+          // Only add unique structures
+          if (!this.sentenceStructures.some(s => 
+            JSON.stringify(s) === JSON.stringify(structure)
+          )) {
+            this.sentenceStructures.push(structure);
+            
+            // Limit the number of stored structures
+            if (this.sentenceStructures.length > this.maxSentenceStructures) {
+              this.sentenceStructures.shift();
+            }
+          }
+        });
+      }
+
+      // Basic tokenization with part-of-speech hints
+      tokenizeSentence(sentence) {
+        return sentence.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .split(/\s+/)
+          .map(word => ({
+            text: word,
+            type: this.inferWordType(word)
+          }));
+      }
+
+      // Simple word type inference
+      inferWordType(word) {
+        const pos = {
+          article: ['a', 'an', 'the'],
+          preposition: ['in', 'on', 'at', 'to', 'for', 'with', 'by'],
+          pronoun: ['i', 'you', 'he', 'she', 'it', 'we', 'they'],
+          conjunction: ['and', 'but', 'or', 'because', 'so']
+        };
+
+        for (let [type, words] of Object.entries(pos)) {
+          if (words.includes(word)) return type;
+        }
+
+        // Basic additional classification
+        if (/ly$/.test(word)) return 'adverb';
+        if (/ed$/.test(word)) return 'verb-past';
+        if (/ing$/.test(word)) return 'verb-gerund';
+        if (/s$/.test(word)) return 'noun-plural';
+		return 'unknown';
+      }
+
+      // Analyze sentence structure
+      analyzeSentenceStructure(words) {
+        return words.map(word => word.type);
+      }
+
+      // Semantic knowledge graph builder
+      updateKnowledgeGraph(word, context) {
+        if (!this.knowledgeGraph.has(word)) {
+          this.knowledgeGraph.set(word, new Set());
+        }
+        
+        // Add contextual information
+        context.forEach(contextWord => {
+          this.knowledgeGraph.get(word).add(contextWord);
+        });
+      }
+
+      // Fetch and process Wikipedia information
+      async fetchWikipediaInfo(word) {
+        try {
+          const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+          const data = await response.json();
+          
+          if (data.extract) {
+            // Extract meaningful context
+            const context = this.extractContext(data.extract);
+            
+            // Update knowledge graph
+            this.updateKnowledgeGraph(word, context);
+            
+            // Extract sentence structures
+            this.extractSentenceStructures(data.extract);
+            
+            return {
+              title: data.title,
+              description: data.extract,
+              context: context
+            };
+          }
+          
+          return null;
+        } catch (error) {
+          console.error(`Wikipedia lookup error for ${word}:`, error);
+          return null;
+        }
+      }
+
+      // Extract meaningful context words
+      extractContext(text) {
+        // Remove punctuation and convert to lowercase
+        const cleanText = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+        
+        // Split into words and filter
+        const words = cleanText.split(/\s+/)
+          .filter(word => 
+            word.length > 3 && 
+            !['this', 'that', 'with', 'from', 'have', 'some', 'many', 'more'].includes(word)
+          );
+        
+        // Return unique words, limited to 20
+        return [...new Set(words)].slice(0, 20);
+      }
+
+      // Generate learning insights
+      generateLearningInsights(word, lookupData) {
+        if (!lookupData) return "No additional context found.";
+        
+        const insights = [
+          `I learned that "${word}" is related to: ${lookupData.context.slice(0, 5).join(', ')}.`,
+          `Some key ideas about "${lookupData.title}":`,
+          lookupData.description.split('.').slice(0, 2).join('.') + '.'
+        ];
+        
+        return insights.join(' ');
+      }
+
+      // Retrieve known context for a word
+      getWordContext(word) {
+        return this.knowledgeGraph.get(word) || new Set();
+      }
+
+      // Get learned sentence structures
+      getSentenceStructures() {
+        return this.sentenceStructures;
+      }
+    }
+
+    // Global instance of the enhanced Wikipedia learner
+    const wikipediaLearner = new EnhancedWikipediaLearner();
+
+    class MarkovTensorflowLearner {
+      constructor() {
+        // Markov chain state
+        this.markovChain = {};
+        this.conversationMemory = [];
+        this.maxChainDepth = 3; // Allow trigram/trigraph Markov chains
+        
+        // TensorFlow model components
+        this.embeddingModel = null;
+        this.contextModel = null;
+        this.responseModel = null;
+        
+        // Learning parameters
+        this.learningRate = 0.01;
+        this.trainingIterations = 100;
+      }
+
+      // Preprocess and clean text
+      preprocessText(text) {
+        return text.toLowerCase()
+          .replace(/[^a-z0-9\s]/g, '')
+          .trim()
+          .split(/\s+/);
+      }
+
+      // Build Markov chain from text
+      buildMarkovChain(texts) {
+        texts.forEach(text => {
+          const words = this.preprocessText(text);
+          
+          // Create Markov chain with variable n-gram depth
+          for (let depth = 1; depth <= this.maxChainDepth; depth++) {
+            for (let i = 0; i < words.length - depth; i++) {
+              // Generate key from n previous words
+              const key = words.slice(i, i + depth).join(' ');
+              const nextWord = words[i + depth];
+              
+              // Initialize chain if not exists
+              if (!this.markovChain[key]) {
+                this.markovChain[key] = {};
+              }
+              
+              // Count word occurrences
+              if (!this.markovChain[key][nextWord]) {
+                this.markovChain[key][nextWord] = 0;
+              }
+              this.markovChain[key][nextWord]++;
+            }
+          }
+        });
+      }
+
+      // Generate response using Markov chain
+      generateMarkovResponse(seed, maxLength = 20) {
+        if (!seed || Object.keys(this.markovChain).length === 0) {
+          return "I'm processing your input.";
+        }
+
+        const words = this.preprocessText(seed);
+        const response = [...words];
+
+        // Try to use different depths of n-grams
+        for (let depth = Math.min(this.maxChainDepth, words.length); depth > 0; depth--) {
+          const startKey = words.slice(-depth).join(' ');
+          
+          if (this.markovChain[startKey]) {
+            let currentKey = startKey;
+            
+            while (response.length < maxLength) {
+              const possibleNextWords = Object.entries(this.markovChain[currentKey] || {});
+              
+              if (possibleNextWords.length === 0) break;
+              
+              // Weighted random selection
+              const totalWeight = possibleNextWords.reduce((sum, [, count]) => sum + count, 0);
+              const randomPoint = Math.random() * totalWeight;
+              
+              let cumulativeWeight = 0;
+              const selectedWord = possibleNextWords.find(([, count]) => {
+                cumulativeWeight += count;
+                return cumulativeWeight >= randomPoint;
+              })[0];
+              
+              response.push(selectedWord);
+              
+              // Update current key for next iteration
+              currentKey = response.slice(-depth).join(' ');
+              
+              // Prevent getting stuck
+              if (!this.markovChain[currentKey]) break;
+            }
+            
+            break; // Exit after finding a valid chain
+          }
+        }
+
+        return response.join(' ');
+      }
+
+      // TensorFlow context understanding model
+      createContextModel(inputShape) {
+        const model = tf.sequential();
+        
+        // Embedding layer
+        model.add(tf.layers.embedding({
+          inputDim: this.vocabSize,
+          outputDim: 128,
+          inputLength: inputShape
+        }));
+        
+        // Convolutional layers for feature extraction
+        model.add(tf.layers.conv1d({
+          filters: 64,
+          kernelSize: 3,
+          activation: 'relu'
+        }));
+        
+        model.add(tf.layers.globalMaxPooling1d({}));
+        
+        // Dense layers for context understanding
+        model.add(tf.layers.dense({
+          units: 128,
+          activation: 'relu'
+        }));
+        
+        model.add(tf.layers.dense({
+          units: 64,
+          activation: 'tanh'
+        }));
+        
+        model.compile({
+          optimizer: tf.train.adam(this.learningRate),
+          loss: 'meanSquaredError'
+        });
+        
+        return model;
+      }
+
+      // Integrate learning from multiple sources
+      learnFromConversation(input, response) {
+        // Add to conversation memory
+        this.conversationMemory.push({ input, response });
+        
+        // Update Markov chain
+        this.buildMarkovChain([input, response]);
+        
+        // Prepare data for TensorFlow learning
+        const inputTokens = this.preprocessText(input);
+        const responseTokens = this.preprocessText(response);
+        
+        // Create vocabulary if not exists
+        this.updateVocabulary(inputTokens.concat(responseTokens));
+        
+        // Prepare tensor data
+        const inputTensor = this.convertToTensor(inputTokens);
+        const responseTensor = this.convertToTensor(responseTokens);
+        
+        // Train context model
+        if (!this.contextModel) {
+          this.contextModel = this.createContextModel(inputTensor.shape[1]);
+        }
+        
+        try {
+          this.contextModel.fit(inputTensor, responseTensor, {
+            epochs: this.trainingIterations,
+            batchSize: 32
+          });
+        } catch (error) {
+          console.error('TensorFlow training error:', error);
+        }
+      }
+
+      // Update vocabulary for tensor conversion
+      updateVocabulary(tokens) {
+        const uniqueTokens = [...new Set(tokens)];
+        this.vocabSize = uniqueTokens.length + 1; // +1 for padding
+        
+        // Create word to index mapping
+        this.wordToIndex = {};
+        uniqueTokens.forEach((word, index) => {
+          this.wordToIndex[word] = index + 1; // 0 reserved for padding
+        });
+      }
+
+      // Convert tokens to tensor
+      convertToTensor(tokens) {
+        // Pad or truncate to fixed length
+        const maxLength = 50;
+        const paddedTokens = tokens.slice(0, maxLength);
+        while (paddedTokens.length < maxLength) {
+          paddedTokens.push(0); // Pad with zeros
+        }
+        
+        // Convert to indices
+        const indices = paddedTokens.map(token => 
+          this.wordToIndex[token] || 0 // 0 for unknown words
+        );
+        
+        return tf.tensor2d([indices], [1, maxLength]);
+      }
+
+      // Generate context-aware response
+      generateContextResponse(input) {
+        // First, try Markov chain response
+        const markovResponse = this.generateMarkovResponse(input);
+        
+        // If TensorFlow model exists, use it to refine/generate response
+        if (this.contextModel) {
+          try {
+            const inputTokens = this.preprocessText(input);
+            const inputTensor = this.convertToTensor(inputTokens);
+            
+            // Use model to predict response
+            const predictedResponse = this.contextModel.predict(inputTensor);
+            
+            // Convert predicted tensor back to text
+            const predictedIndices = predictedResponse.dataSync()
+              .map(val => Math.round(val * (this.vocabSize - 1)));
+            
+            const predictedWords = predictedIndices
+              .map(index => 
+                Object.keys(this.wordToIndex)
+                  .find(key => this.wordToIndex[key] === index) || ''
+              )
+              .filter(word => word);
+            
+            // Combine Markov and TensorFlow responses
+            return predictedWords.length > 0 
+              ? `${markovResponse} ${predictedWords.join(' ')}`.trim()
+              : markovResponse;
+          } catch (error) {
+            console.error('Response generation error:', error);
+            return markovResponse;
+          }
+        }
+        
+        return markovResponse;
+      }
+
+      // Reset or initialize the learner
+      reset() {
+        this.markovChain = {};
+        this.conversationMemory = [];
+        this.contextModel = null;
+        this.wordToIndex = {};
+        this.vocabSize = 0;
+      }
+    }
+
+    // Instantiate the Markov TensorFlow Learner
+    const markovTensorflowLearner = new MarkovTensorflowLearner();
+
+    function loadMemory() {
+      const data = localStorage.getItem('cleverbotTrainingData');
+      const phraseData = localStorage.getItem('cleverbotPhraseMap');
+      if (phraseData) {
+        const parsedMap = JSON.parse(phraseData);
+        parsedMap.forEach(([key, value]) => {
+          phraseMap.set(key, new Map(Object.entries(value)));
+        });
+      }
+      return data ? JSON.parse(data) : null;
+    }
+
+    // Enhanced memory structure with similarity mappings
+    let trainingData = loadMemory() || [
+      { input: "hello", output: "hi there!" },
+      { input: "how are you", output: "i'm fine, thanks!" },
+      { input: "what is your name", output: "i'm cleverbot." },
+      { input: "dog", output: "barks" },
+      { input: "cat", output: "meows" },
+      { input: "sky", output: "blue" },
+      { input: "grass", output: "green" },
+      { input: "fire", output: "hot" },
+      { input: "ice", output: "cold" },
+      { input: "water", output: "wet" },
+      { input: "sun", output: "bright" },
+      { input: "moon", output: "glows" },
+      { input: "computer", output: "computes" },
+      { input: "tree", output: "grows" },
+      { input: "rain", output: "falls" },
+      { input: "clouds", output: "float" },
+      { input: "bird", output: "flies" },
+      { input: "fish", output: "swims" },
+      { input: "phone", output: "calls" },
+      { input: "car", output: "drives" },
+      { input: "bike", output: "rides" },
+      { input: "flower", output: "blooms" },
+      { input: "wind", output: "blows" }
+    ];
+    
+    // Similarity drive implementation
+    function calculateSimilarity(str1, str2) {
+      const set1 = new Set(str1.toLowerCase().split(' '));
+      const set2 = new Set(str2.toLowerCase().split(' '));
+      const intersection = new Set([...set1].filter(x => set2.has(x)));
+      const union = new Set([...set1, ...set2]);
+      return intersection.size / union.size;
+    }
+
+    function findSimilarPhrases(input) {
+      const similarities = trainingData.map(item => ({
+        phrase: item.input,
+        output: item.output,
+        similarity: calculateSimilarity(input, item.input)
+      }));
+      
+      return similarities
+        .filter(item => item.similarity > 0.2)
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 5);
+    }
+
+    function updatePhraseMap(input, output) {
+      const key = clean(input);
+      if (!phraseMap.has(key)) {
+        phraseMap.set(key, new Map());
+      }
+      const phraseCounts = phraseMap.get(key);
+      phraseCounts.set(output, (phraseCounts.get(output) || 0) + 1);
+    }
+
+    function clean(text) {
+      return text.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    }
+
+    function tokenize(input) {
+      const words = clean(input).split(/\s+/);
+      const tokens = [];
+      for (let i = 0; i < words.length - 1; i++) {
+        tokens.push([words[i], words[i + 1]]);
+      }
+      if (words.length > 2) {
+        for (let i = 0; i < words.length - 2; i++) {
+          tokens.push([words[i] + " " + words[i+1], words[i+2]]);
+        }
+      }
+      return tokens;
+    }
+
+    // Updated sendInput function that integrates context mapping
+    async function sendInput() {
+      const input = userInput.value.trim();
+      if (!input) return;
+
+      addMessage('You', input);
+      userInput.value = '';
+      showTyping();
+
+      try {
+        // Split input into individual words for potential lookup
+        const words = input.toLowerCase().split(/\s+/);
+        let lookupPromises = words.map(async word => {
+          // Only look up substantive words
+          if (word.length > 3 && !['this', 'that', 'with', 'from'].includes(word)) {
+            return {
+              word,
+              data: await wikipediaLearner.fetchWikipediaInfo(word)
+            };
+          }
+          return null;
+        });
+
+        // Process Wikipedia lookups
+        const lookupResults = await Promise.all(lookupPromises);
+        const validLookups = lookupResults.filter(result => result && result.data);
+
+        // Generate response using multiple learning techniques
+        let response = "";
+        
+        // Record input structure for learning
+        contextMapper.recordSentenceStructure(input);
+        
+        // Process Wikipedia content and update the context mapper
+        if (validLookups.length > 0) {
+          validLookups.forEach(lookup => {
+            if (lookup.data && lookup.data.description) {
+              // Process the Wikipedia text through the context mapper
+              contextMapper.processWikipediaText(lookup.data.description, lookup.word);
+              
+              // Add learning insights to response
+              const learningInsight = wikipediaLearner.generateLearningInsights(lookup.word, lookup.data);
+              response += learningInsight + " ";
+            }
+          });
+        }
+
+        // Generate a contextual response using learned sentence structures
+        if (contextMapper.sentenceStructures.length > 0) {
+          // Get a contextual response based on input and learned structures
+          const contextualResponse = contextMapper.generateContextualResponse(input);
+          response += contextualResponse;
+        } else {
+          // Fallback to existing response generation
+          response += generateResponse(input);
+        }
+
+        // Add bot message
+        addMessage('Bot', response);
+
+        // Learn from the interaction
+        const tokens = tokenize(input);
+        tokens.forEach(([key, value]) => {
+          // Update training data with enhanced learning
+          trainingData.push({ input: key, output: value });
+          updatePhraseMap(key, value);
+        });
+
+        // Retrain neural network
+        net.train(trainingData, { 
+          iterations: 100, 
+          errorThresh: 0.02 
+        });
+
+        // Save memory
+        saveMemory();
+        
+        // Update visualizations
+        updateContextVisualizations();
+
+      } catch (error) {
+        console.error('Input processing error:', error);
+        addMessage('Bot', 'Sorry, I encountered an error processing your input.');
+      } finally {
+        hideTyping();
+        drawGraph();
+      }
+    }
+    
+    function addMessage(sender, message) {
+      const msg = document.createElement('div');
+      msg.className = "mb-2";
+      msg.innerHTML = `<strong>${sender}:</strong> ${message}`;
+      chatbox.appendChild(msg);
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+
+    function showTyping() {
+      typingIndicator.classList.remove('hidden');
+    }
+
+    function hideTyping() {
+      typingIndicator.classList.add('hidden');
+    }
+
+    function decayButton() {
+      // Enhanced decay for phrase mapping
+      for (let [key, counts] of phraseMap) {
+        for (let [output, count] of counts) {
+          const newCount = count * 0.9;
+          if (newCount < 0.1) {
+            counts.delete(output);
+          } else {
+            counts.set(output, newCount);
+          }
+        }
+        if (counts.size === 0) {
+          phraseMap.delete(key);
+        }
+      }
+      
+      // Decay contextual memory as well
+      for (let [word, contexts] of contextMapper.contextualMemory) {
+        if (Math.random() < 0.2) {  // 20% chance to decay each context
+          const contextArray = Array.from(contexts);
+          if (contextArray.length > 1) {
+            // Remove random context
+            const randomIndex = Math.floor(Math.random() * contextArray.length);
+            contexts.delete(contextArray[randomIndex]);
+          }
+        }
+      }
+      
+      alert('Memory decayed!');
+      updateContextVisualizations();
+      drawGraph();
+    }
+
+    // Word lookup functionality
+    async function lookupWord(word) {
+      try {
+        // Using the Wikipedia API to fetch summary and related terms
+        const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(word)}`);
+        const data = await response.json();
+        
+        if (data.title && data.extract) {
+          return {
+            title: data.title,
+            description: data.extract,
+            related: extractKeywords(data.extract)
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error('Lookup error:', error);
+        return null;
+      }
+    }
+
+    function extractKeywords(text) {
+      // Extract important words from the description
+      const words = text.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .split(/\s+/)
+        .filter(word => word.length > 3 && !commonWords.includes(word));
+      
+      // Count word frequencies
+      const wordFreq = {};
+      words.forEach(word => {
+        wordFreq[word] = (wordFreq[word] || 0) + 1;
+      });
+      
+      // Get top keywords
+      return Object.entries(wordFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([word]) => word);
+    }
+
+    const commonWords = ['this', 'that', 'with', 'from', 'have', 'they', 'what', 'when', 'where', 'which', 'their', 'there', 'been', 'were', 'will', 'would', 'could', 'should'];
+
+    function toggleLookupMode() {
+      lookupModeEnabled = !lookupModeEnabled;
+      const button = document.getElementById('lookupToggle');
+      button.textContent = lookupModeEnabled ? 'Disable Word Lookup' : 'Enable Word Lookup';
+      button.className = lookupModeEnabled 
+        ? 'bg-purple-700 text-white px-4 py-2 rounded-xl hover:bg-purple-800 transition'
+        : 'bg-purple-500 text-white px-4 py-2 rounded-xl hover:bg-purple-600 transition';
+    }
+
+    function closeLookupModal() {
+      document.getElementById('wordLookupModal').classList.add('hidden');
+    }
+
+    async function processLookupResults(word, lookupData) {
+      const modal = document.getElementById('wordLookupModal');
+      const content = document.getElementById('lookupContent');
+      
+      // Display lookup results
+      content.innerHTML = `
+        <h4 class="font-bold text-lg mb-2">${lookupData.title}</h4>
+        <p class="mb-4">${lookupData.description}</p>
+        <h5 class="font-semibold mb-2">Related terms:</h5>
+        <div class="flex flex-wrap gap-2">
+          ${lookupData.related.map(term => `<span class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">${term}</span>`).join('')}
+        </div>
+        <div class="mt-4">
+          <button onclick="closeLookupModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+            Close
+          </button>
+        </div>
+      `;
+      
+      modal.classList.remove('hidden');
+      
+      // Create weighted connections with related terms
+      learningMultiplier = 2.5; // Increase weight for lookup-based learning
+      
+      // Create connections between the looked-up word and related terms
+      lookupData.related.forEach(relatedTerm => {
+        trainingData.push({ input: word, output: relatedTerm });
+        trainingData.push({ input: relatedTerm, output: word });
+        
+        // Create phrase mapping with higher weight
+        updatePhraseMapWithWeight(word, relatedTerm, 5);
+        updatePhraseMapWithWeight(relatedTerm, word, 5);
+      });
+      
+      // Extract sentences from description and create connections
+      const sentences = lookupData.description.match(/[^.!?]+[.!?]+/g) || [];
+      sentences.slice(0, 3).forEach(sentence => {
+        const cleanSentence = clean(sentence);
+        const words = cleanSentence.split(/\s+/);
+        
+        // Connect lookup word with words from the description
+        words.forEach(descWord => {
+          if (descWord.length > 3 && !commonWords.includes(descWord)) {
+            trainingData.push({ input: word, output: descWord });
+            updatePhraseMapWithWeight(word, descWord, 3);
+          }
+        });
+      });
+      
+      // Reset learning multiplier after weighted learning
+      setTimeout(() => {
+        learningMultiplier = 1.0;
+      }, 1000);
+      
+      // Retrain with new connections
+      net.train(trainingData, { iterations: 200, errorThresh: 0.02 });
+      saveMemory();
+      drawGraph();
+    }
+
+    function updatePhraseMapWithWeight(input, output, weight = 1) {
+      const key = clean(input);
+      if (!phraseMap.has(key)) {
+        phraseMap.set(key, new Map());
+      }
+      const phraseCounts = phraseMap.get(key);
+      phraseCounts.set(output, (phraseCounts.get(output) || 0) + weight);
+    }
+
+    function generateResponse(input) {
+      const responses = [
+        "Interesting!",
+        "I see.",
+        "Can you explain that?",
+        "Go on...",
+        "Why do you say that?",
+        "Tell me more about that.",
+        "That's fascinating!",
+        "What makes you think that?"
+      ];
+      return responses[Math.floor(Math.random() * responses.length)];
+    }
+
+    function saveMemory() {
+      localStorage.setItem('cleverbotTrainingData', JSON.stringify(trainingData));
+      localStorage.setItem('cleverbotPhraseMap', JSON.stringify([...phraseMap]));
+      
+      // Save sentence structures (convert Maps to serializable arrays)
+      const serializableStructures = contextMapper.sentenceStructures.map(structure => {
+        return {
+          type: structure.type,
+          structure: structure.structure,
+          original: structure.original,
+          contentMap: structure.contentMap ? Array.from(structure.contentMap.entries()) : []
+        };
+      });
+      
+      localStorage.setItem('cleverbotSentenceStructures', JSON.stringify(serializableStructures));
+      
+      // Save contextual memory (convert Sets to arrays)
+      const serializableMemory = Array.from(contextMapper.contextualMemory.entries())
+        .map(([key, valueSet]) => [key, Array.from(valueSet)]);
+      
+      localStorage.setItem('cleverbotContextualMemory', JSON.stringify(serializableMemory));
+    }
+
+    function saveBrain() {
+      // Prepare sentence structures for serialization
+      const serializableStructures = contextMapper.sentenceStructures.map(structure => {
+        return {
+          type: structure.type,
+          structure: structure.structure,
+          original: structure.original,
+          contentMap: Array.from(structure.contentMap.entries())
+        };
+      });
+      
+      // Prepare contextual memory for serialization
+      const serializableMemory = Array.from(contextMapper.contextualMemory.entries())
+        .map(([key, valueSet]) => [key, Array.from(valueSet)]);
+      
+      const memory = {
+        trainingData: trainingData,
+        phraseMap: [...phraseMap],
+        sentenceStructures: serializableStructures,
+        contextualMemory: serializableMemory
+      };
+      
+      const blob = new Blob([JSON.stringify(memory, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "enhanced_cleverbot_brain.json";
+      a.click();
+      
+      URL.revokeObjectURL(url);
+    }
+
+    function loadBrain(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const loadedData = JSON.parse(e.target.result);
+          if (loadedData.trainingData) {
+            trainingData = loadedData.trainingData;
+            if (loadedData.phraseMap) {
+              phraseMap.clear();
+              loadedData.phraseMap.forEach(([key, value]) => {
+                phraseMap.set(key, new Map(Object.entries(value)));
+              });
+            }
+            
+            // Load context mapper data if available
+            if (loadedData.sentenceStructures) {
+              contextMapper.sentenceStructures = loadedData.sentenceStructures.map(structure => {
+                return {
+                  type: structure.type,
+                  structure: structure.structure,
+                  original: structure.original,
+                  contentMap: new Map(structure.contentMap)
+                };
+              });
+            }
+            
+            if (loadedData.contextualMemory) {
+              contextMapper.contextualMemory = new Map();
+              loadedData.contextualMemory.forEach(([key, valueArray]) => {
+                contextMapper.contextualMemory.set(key, new Set(valueArray));
+              });
+            }
+            
+            net.train(trainingData, { iterations: 500, errorThresh: 0.009 });
+            saveMemory();
+            updateContextVisualizations();
+            drawGraph();
+            alert('Enhanced brain loaded successfully!');
+          } else {
+            alert('Invalid brain file.');
+          }
+        } catch (err) {
+          alert('Error loading brain: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Load the context mapper data
+    function loadContextMapperData() {
+      // Load sentence structures
+      const storedStructures = localStorage.getItem('cleverbotSentenceStructures');
+      if (storedStructures) {
+        const parsedStructures = JSON.parse(storedStructures);
+        contextMapper.sentenceStructures = parsedStructures.map(structure => {
+          return {
+            type: structure.type,
+            structure: structure.structure,
+            original: structure.original,
+            contentMap: new Map(structure.contentMap)
+          };
+        });
+      }
+      
+      // Load contextual memory
+      const storedMemory = localStorage.getItem('cleverbotContextualMemory');
+      if (storedMemory) {
+        const parsedMemory = JSON.parse(storedMemory);
+        contextMapper.contextualMemory = new Map();
+        parsedMemory.forEach(([key, valueArray]) => {
+          contextMapper.contextualMemory.set(key, new Set(valueArray));
+        });
+      }
+    }
+
+function updateContextVisualizations() {
+      const structuresDisplay = document.getElementById('sentenceStructuresDisplay');
+      const contextDisplay = document.getElementById('contextMemoryDisplay');
+      
+      if (!structuresDisplay || !contextDisplay) return;
+      
+      // Update sentence structures display
+      structuresDisplay.innerHTML = '';
+      const structuresToShow = contextMapper.sentenceStructures.slice(-10); // Show last 10
+      
+      structuresToShow.forEach(structure => {
+        const div = document.createElement('div');
+        div.className = 'mb-1 pb-1 border-b border-gray-100';
+        
+        // Create simplified representation of the structure
+        const structureRepresentation = structure.structure
+          .map(token => token.replace('[', '').replace(']', '').substring(0, 4))
+          .join('-');
+        
+        div.textContent = `${structure.type}: ${structureRepresentation}`;
+        structuresDisplay.appendChild(div);
+      });
+      
+      // Update contextual memory display
+      contextDisplay.innerHTML = '';
+      
+      // Show top 10 contexts with most connections
+      const contextEntries = Array.from(contextMapper.contextualMemory.entries())
+        .sort((a, b) => b[1].size - a[1].size)
+        .slice(0, 10);
+      
+      contextEntries.forEach(([word, contexts]) => {
+        const div = document.createElement('div');
+        div.className = 'mb-1 pb-1 border-b border-gray-100';
+        div.textContent = `${word}: ${Array.from(contexts).slice(0, 5).join(', ')}${contexts.size > 5 ? '...' : ''}`;
+        contextDisplay.appendChild(div);
+      });
+    }
+
+    // Enhanced graph with pan and zoom
+    function drawGraph() {
+      svg.selectAll("*").remove();
+      
+      const width = svg.node().clientWidth;
+      const height = svg.node().clientHeight;
+
+      const g = svg.append("g");
+
+      const nodes = [];
+      const links = [];
+      const nodeMap = {};
+
+      // Create nodes and links with similarity information
+      trainingData.forEach(pair => {
+        if (!nodeMap[pair.input]) {
+          nodeMap[pair.input] = { id: pair.input, group: 1 };
+          nodes.push(nodeMap[pair.input]);
+        }
+        if (!nodeMap[pair.output]) {
+          nodeMap[pair.output] = { id: pair.output, group: 2 };
+          nodes.push(nodeMap[pair.output]);
+        }
+        links.push({ source: pair.input, target: pair.output });
+      });
+
+      // Zoom and pan functionality
+      const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on("zoom", (event) => {
+          g.attr("transform", event.transform);
+        });
+
+      svg.call(zoom);
+
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-400))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(30));
+
+      const link = g.append("g")
+          .attr("stroke", "#999")
+          .attr("stroke-opacity", 0.6)
+        .selectAll("line")
+        .data(links)
+        .join("line")
+          .attr("stroke-width", 1.5);
+
+      const node = g.append("g")
+          .attr("stroke", "#fff")
+          .attr("stroke-width", 1.5)
+        .selectAll("circle")
+        .data(nodes)
+        .join("circle")
+          .attr("r", d => d.group === 1 ? 12 : 10)
+          .attr("fill", d => d.group === 1 ? "#6366f1" : "#8b5cf6")
+          .call(drag(simulation));
+
+      const label = g.append("g")
+        .selectAll("text")
+        .data(nodes)
+        .join("text")
+          .text(d => d.id)
+          .attr("font-size", 12)
+          .attr("fill", "#333")
+          .attr("dx", 15)
+          .attr("dy", 5);
+
+      node.append("title")
+        .text(d => `${d.id} (Group: ${d.group})`);
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        node
+          .attr("cx", d => d.x)
+          .attr("cy", d => d.y);
+
+        label
+          .attr("x", d => d.x)
+          .attr("y", d => d.y);
+      });
+
+      // Store the simulation reference for reset
+      svg.node().__simulation = simulation;
+      svg.node().__zoom = zoom;
+    }
+
+    // Draw context network instead of regular graph
+    function drawContextNetwork() {
+      svg.selectAll("*").remove();
+      
+      const width = svg.node().clientWidth;
+      const height = svg.node().clientHeight;
+
+      const g = svg.append("g");
+
+      const nodes = [];
+      const links = [];
+      const nodeMap = {};
+
+      // Get top 50 words with most context connections
+      const topContextWords = Array.from(contextMapper.contextualMemory.entries())
+        .sort((a, b) => b[1].size - a[1].size)
+        .slice(0, 50);
+      
+      // Create nodes for each word
+      topContextWords.forEach(([word, contexts], index) => {
+        if (!nodeMap[word]) {
+          nodeMap[word] = { id: word, group: 1, size: contexts.size };
+          nodes.push(nodeMap[word]);
+        }
+        
+        // Create nodes and links for top 3 contexts per word
+        Array.from(contexts).slice(0, 5).forEach(context => {
+          if (!nodeMap[context]) {
+            nodeMap[context] = { id: context, group: 2, size: 5 };
+            nodes.push(nodeMap[context]);
+          }
+          
+          links.push({ 
+            source: word, 
+            target: context, 
+            value: 1 
+          });
+        });
+      });
+
+      // Zoom and pan functionality
+      const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on("zoom", (event) => {
+          g.attr("transform", event.transform);
+        });
+
+      svg.call(zoom);
+
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collision", d3.forceCollide().radius(d => 5 + Math.sqrt(d.size) * 2));
+
+      const link = g.append("g")
+          .attr("stroke", "#999")
+          .attr("stroke-opacity", 0.6)
+        .selectAll("line")
+        .data(links)
+        .join("line")
+          .attr("stroke-width", 1);
+
+      const node = g.append("g")
+          .attr("stroke", "#fff")
+          .attr("stroke-width", 1.5)
+        .selectAll("circle")
+        .data(nodes)
+        .join("circle")
+          .attr("r", d => 5 + Math.sqrt(d.size || 5))
+          .attr("fill", d => d.group === 1 ? "#4f46e5" : "#7c3aed")
+          .call(drag(simulation));
+
+      const label = g.append("g")
+        .selectAll("text")
+        .data(nodes)
+        .join("text")
+          .text(d => d.id)
+          .attr("font-size", 10)
+          .attr("fill", "#333")
+          .attr("dx", 12)
+          .attr("dy", 4);
+
+      node.append("title")
+        .text(d => `${d.id} (Connections: ${d.size || 0})`);
+
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        node
+          .attr("cx", d => d.x)
+          .attr("cy", d => d.y);
+
+        label
+          .attr("x", d => d.x)
+          .attr("y", d => d.y);
+      });
+
+      // Store the simulation reference for reset
+      svg.node().__simulation = simulation;
+      svg.node().__zoom = zoom;
+    }
+
+    function drag(simulation) {
+      function dragstarted(event) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        event.subject.fx = event.subject.x;
+        event.subject.fy = event.subject.y;
+      }
+
+      function dragged(event) {
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+      }
+
+      function dragended(event) {
+        if (!event.active) simulation.alphaTarget(0);
+        event.subject.fx = null;
+        event.subject.fy = null;
+      }
+
+      return d3.drag()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended);
+    }
+
+    function resetView() {
+      const zoom = svg.node().__zoom;
+      if (zoom) {
+        svg.transition()
+          .duration(750)
+          .call(zoom.transform, d3.zoomIdentity);
+      }
+    }
+
+    function togglePhysics() {
+      physicsEnabled = !physicsEnabled;
+      const simulation = svg.node().__simulation;
+      if (simulation) {
+        if (physicsEnabled) {
+          simulation.alphaTarget(0.3).restart();
+        } else {
+          simulation.stop();
+        }
+      }
+    }
+    
+    // Initialize event listeners for new visualization controls
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initial training
+      net.train(trainingData, {
+        iterations: 500,
+        errorThresh: 0.009
+      });
+      
+      // Load context mapper data
+      loadContextMapperData();
+      
+      // Initialize the graph
+      drawGraph();
+      
+      // Update visualizations
+      updateContextVisualizations();
+      
+      // Add event listener for clearing structures
+      const clearBtn = document.getElementById('clearStructuresBtn');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          if (confirm('Are you sure you want to clear all sentence structures?')) {
+            contextMapper.sentenceStructures = [];
+            saveMemory();
+            updateContextVisualizations();
+          }
+        });
+      }
+      
+      // Add event listener for toggling context visualization
+      const toggleBtn = document.getElementById('toggleContextVisBtn');
+      let contextNetworkVisible = false;
+      
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          contextNetworkVisible = !contextNetworkVisible;
+          toggleBtn.textContent = contextNetworkVisible ? 'Hide Context Network' : 'Show Context Network';
+          
+          if (contextNetworkVisible) {
+            drawContextNetwork();
+          } else {
+            // Switch back to regular graph
+            drawGraph();
+          }
+        });
+      }
+    });
+  </script>
+  <script>//**
+ * Enhanced Contextual Response Module for Cleverbot
+ * This module extends the existing Cleverbot functionality with:
+ * - Semantic relationship mapping
+ * - Conversation history awareness
+ * - Response diversity mechanisms
+ * - Advanced template variation
+ * - Emotion recognition
+ */
+
+// Advanced Contextual Engine
+class AdvancedContextualEngine {
+  constructor() {
+    this.semanticNetwork = new Map();
+    this.conversationMemory = [];
+    this.maxConversationMemory = 10;
+    this.templateVariants = [];
+    this.maxTemplateVariants = 200;
+    this.emotionMap = new Map();
+    this.sentencePatterns = [];
+    this.topicChains = new Map();
+    this.responseCoherence = 0.7; // 0-1 balance between novelty and coherence
+    this.sentimentAnalyzer = new SentimentAnalyzer();
+    this.usedTemplates = new Set(); // Track recently used templates to prevent repetition
+  }
+
+  // Initialize with existing context mapper data
+  initialize(contextMapper, phraseMap) {
+    if (contextMapper && contextMapper.sentenceStructures) {
+      // Import existing sentence structures as templates
+      contextMapper.sentenceStructures.forEach(structure => {
+        this.addTemplateVariant(structure);
+      });
+    }
+
+    if (contextMapper && contextMapper.contextualMemory) {
+      // Import contextual memory into semantic network
+      for (const [word, contexts] of contextMapper.contextualMemory.entries()) {
+        this.semanticNetwork.set(word, {
+          associations: new Map([...contexts].map(context => [context, 1.0])),
+          frequency: 1,
+          lastUsed: Date.now()
+        });
+      }
+    }
+
+    if (phraseMap) {
+      // Import phrase mappings into topic chains
+      for (const [key, valueMap] of phraseMap.entries()) {
+        this.topicChains.set(key, new Map([...valueMap].map(([value, weight]) => [value, {
+          weight,
+          count: 1,
+          lastUsed: Date.now()
+        }])));
+      }
+    }
+
+    console.log("Advanced Contextual Engine initialized with:", {
+      templates: this.templateVariants.length,
+      semanticNodes: this.semanticNetwork.size,
+      topicChains: this.topicChains.size
+    });
+  }
+
+  // Process user input and update semantic network
+  processInput(input, isUserInput = true) {
+    // Basic cleaning
+    const cleanInput = input.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
+    const words = cleanInput.split(/\s+/).filter(w => w.length > 2);
+    
+    // Update conversation memory
+    if (isUserInput) {
+      this.conversationMemory.push({
+        text: input,
+        timestamp: Date.now(),
+        isUser: true,
+        sentiment: this.sentimentAnalyzer.analyze(input)
+      });
+      
+      // Limit conversation memory size
+      if (this.conversationMemory.length > this.maxConversationMemory) {
+        this.conversationMemory.shift();
+      }
+    }
+    
+    // Extract emotion cues
+    const emotion = this.detectEmotion(input);
+    if (emotion) {
+      words.forEach(word => {
+        if (!this.emotionMap.has(word)) {
+          this.emotionMap.set(word, new Map());
+        }
+        const emotionCounts = this.emotionMap.get(word);
+        emotionCounts.set(emotion, (emotionCounts.get(emotion) || 0) + 1);
+      });
+    }
+    
+    // Update semantic network with co-occurrence relationships
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      
+      // Create or update word node
+      if (!this.semanticNetwork.has(word)) {
+        this.semanticNetwork.set(word, {
+          associations: new Map(),
+          frequency: 0,
+          lastUsed: Date.now()
+        });
+      }
+      
+      const wordNode = this.semanticNetwork.get(word);
+      wordNode.frequency += 1;
+      wordNode.lastUsed = Date.now();
+      
+      // Update associations with nearby words (window of 5 words)
+      for (let j = Math.max(0, i - 5); j < Math.min(words.length, i + 6); j++) {
+        if (i !== j) {
+          const contextWord = words[j];
+          if (!wordNode.associations.has(contextWord)) {
+            wordNode.associations.set(contextWord, 0);
+          }
+          
+          // Closer words get stronger association
+          const distance = Math.abs(i - j);
+          const associationStrength = 1.0 / (distance * distance);
+          wordNode.associations.set(
+            contextWord, 
+            wordNode.associations.get(contextWord) + associationStrength
+          );
+        }
+      }
+    }
+    
+    return words;
+  }
+
+  // Add new template variant
+  addTemplateVariant(template) {
+    // Check if similar template already exists
+    const isSimilar = this.templateVariants.some(existing => 
+      this.calculateTemplateSimilarity(existing, template) > 0.85
+    );
+    
+    if (!isSimilar) {
+      this.templateVariants.push(template);
+      
+      // Limit size of template collection
+      if (this.templateVariants.length > this.maxTemplateVariants) {
+        // Remove oldest or least used template
+        this.templateVariants.shift();
+      }
+      
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Calculate similarity between two templates
+  calculateTemplateSimilarity(template1, template2) {
+    if (!template1.structure || !template2.structure) return 0;
+    
+    const str1 = template1.structure.join('');
+    const str2 = template2.structure.join('');
+    
+    // Simple Jaccard similarity
+    const set1 = new Set(str1);
+    const set2 = new Set(str2);
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    
+    return intersection.size / (set1.size + set2.size - intersection.size);
+  }
+
+  // Detect emotion from text
+  detectEmotion(text) {
+    const emotionKeywords = {
+      happy: ['happy', 'joy', 'delighted', 'pleased', 'glad', 'excited', ':)', ':-)', '😊', '😄'],
+      sad: ['sad', 'unhappy', 'depressed', 'down', 'miserable', ':(', ':-(', '😢', '😞'],
+      angry: ['angry', 'mad', 'furious', 'outraged', 'annoyed', 'irritated', '😠', '😡'],
+      surprised: ['surprised', 'amazed', 'astonished', 'shocked', 'wow', 'whoa', '😲', '😮'],
+      confused: ['confused', 'puzzled', 'perplexed', 'unsure', 'uncertain', '🤔'],
+      curious: ['curious', 'interested', 'intrigued', 'wondering', 'what', 'how', 'why', '?']
+    };
+    
+    const lowerText = text.toLowerCase();
+    let detectedEmotion = null;
+    let maxMatches = 0;
+    
+    for (const [emotion, keywords] of Object.entries(emotionKeywords)) {
+      const matches = keywords.filter(keyword => lowerText.includes(keyword)).length;
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        detectedEmotion = emotion;
+      }
+    }
+    
+    return maxMatches > 0 ? detectedEmotion : null;
+  }
+
+  // Generate emotional response based on detected emotion
+  generateEmotionalResponse(emotion) {
+    const emotionalTemplates = {
+      happy: [
+        "I'm glad to hear that! [CONTENT] seems interesting.",
+        "That's wonderful! Tell me more about [CONTENT].",
+        "How fantastic! [CONTENT] sounds very positive."
+      ],
+      sad: [
+        "I understand that can be difficult. [CONTENT] is challenging sometimes.",
+        "I'm sorry to hear about [CONTENT]. Would you like to talk more about it?",
+        "[CONTENT] can be hard to deal with. What else is on your mind?"
+      ],
+      angry: [
+        "I see you feel strongly about [CONTENT]. What specifically bothers you?",
+        "[CONTENT] seems to be frustrating. Would a different perspective help?",
+        "I understand your concern about [CONTENT]. Let's discuss it further."
+      ],
+      surprised: [
+        "Wow! [CONTENT] is quite remarkable!",
+        "That's unexpected! Tell me more about [CONTENT].",
+        "[CONTENT] does sound surprising. What do you make of it?"
+      ],
+      confused: [
+        "Let me help clarify. [CONTENT] can be complex.",
+        "[CONTENT] has many aspects to consider. Which part is confusing?",
+        "I understand [CONTENT] might be unclear. Let's explore it together."
+      ],
+      curious: [
+        "[CONTENT] is fascinating to explore. What interests you most?",
+        "I'm also curious about [CONTENT]. What would you like to know?",
+        "Let's discover more about [CONTENT] together. What's your perspective?"
+      ]
+    };
+    
+    const templates = emotionalTemplates[emotion] || emotionalTemplates.curious;
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+
+  // Get contextually similar words
+  getSimilarWords(word, count = 5) {
+    if (!this.semanticNetwork.has(word)) return [];
+    
+    const wordNode = this.semanticNetwork.get(word);
+    
+    // Sort associations by strength
+    return [...wordNode.associations.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, count)
+      .map(([word]) => word);
+  }
+
+  // Find most relevant template for the input
+  findRelevantTemplate(words, emotion) {
+    // Filter out recently used templates to ensure variety
+    const availableTemplates = this.templateVariants.filter(
+      template => !this.usedTemplates.has(this.getTemplateHash(template))
+    );
+    
+    if (availableTemplates.length === 0) {
+      this.usedTemplates.clear(); // Reset if all have been used
+      return this.findRelevantTemplate(words, emotion);
+    }
+    
+    // If emotion detected, use emotional templates with probability
+    if (emotion && Math.random() < 0.4) {
+      return {
+        structure: this.generateEmotionalResponse(emotion).split(' ').map(token => 
+          token === '[CONTENT]' ? '[CONTENT]' : token
+        ),
+        type: 'emotional',
+        contentMap: new Map()
+      };
+    }
+    
+    // Match input type to different response type
+    const inputType = this.inferInputType(words.join(' '));
+    
+    // Filter by complementary types
+    const typeFiltered = availableTemplates.filter(template => {
+      if (inputType === 'question' && template.type === 'statement') return true;
+      if (inputType === 'statement' && Math.random() < 0.3 && template.type === 'question') return true;
+      if (inputType === 'command' && template.type === 'statement') return true;
+      return false;
+    });
+    
+    // If no type matches, use any template
+    const candidateTemplates = typeFiltered.length > 0 ? typeFiltered : availableTemplates;
+    
+    // Score templates based on content word matches
+    const scoredTemplates = candidateTemplates.map(template => {
+      let score = 0;
+      
+      // Check if template has content map
+      if (template.contentMap && template.contentMap.size > 0) {
+        // Score based on matching words in template's content
+        for (const [, contentWord] of template.contentMap) {
+          if (words.includes(contentWord)) {
+            score += 2; // Direct match
+          } else {
+            // Check for similar words
+            for (const word of words) {
+              const similarWords = this.getSimilarWords(word);
+              if (similarWords.includes(contentWord)) {
+                score += 1; // Semantic match
+              }
+            }
+          }
+        }
+      }
+      
+      // Adjust score based on template complexity
+      if (template.structure && template.structure.length > 5) {
+        score += 0.5; // Prefer longer templates
+      }
+      
+      // Add some randomness to avoid repetitive responses
+      score += Math.random() * 0.5;
+      
+      return { template, score };
+    });
+    
+    // Sort by score and pick highest
+    scoredTemplates.sort((a, b) => b.score - a.score);
+    
+    // Choose one of the top templates (with some randomness)
+    const topN = Math.min(3, scoredTemplates.length);
+    const selectedTemplate = scoredTemplates[Math.floor(Math.random() * topN)].template;
+    
+    // Remember this template was used
+    this.usedTemplates.add(this.getTemplateHash(selectedTemplate));
+    if (this.usedTemplates.size > 50) {
+      // Remove oldest entries when cache gets too large
+      const toRemove = [...this.usedTemplates].slice(0, 10);
+      toRemove.forEach(hash => this.usedTemplates.delete(hash));
+    }
+    
+    return selectedTemplate;
+  }
+
+  // Generate a unique hash for a template
+  getTemplateHash(template) {
+    if (!template || !template.structure) return '';
+    return template.structure.join('|') + (template.type || '');
+  }
+
+  // Infer input type from text
+  inferInputType(text) {
+    if (text.endsWith('?') || /^(what|who|where|when|why|how|is|are|do|does|can|could|would|will)/i.test(text)) {
+      return 'question';
+    }
+    if (/^(please |kindly )?(show|tell|explain|help|find|search|look up)/i.test(text)) {
+      return 'command';
+    }
+    return 'statement';
+  }
+
+  // Get topic chain for a word/phrase
+  getTopicChain(phrase, depth = 3) {
+    const chain = [];
+    let currentPhrase = phrase;
+    
+    for (let i = 0; i < depth && currentPhrase; i++) {
+      if (this.topicChains.has(currentPhrase)) {
+        const nextOptions = [...this.topicChains.get(currentPhrase).entries()]
+          .sort((a, b) => b[1].weight - a[1].weight);
+        
+        if (nextOptions.length > 0) {
+          // Choose next topic with some randomness (weighted selection)
+          const totalWeight = nextOptions.reduce((sum, [, data]) => sum + data.weight, 0);
+          let randomPoint = Math.random() * totalWeight;
+          
+          for (const [nextTopic, data] of nextOptions) {
+            randomPoint -= data.weight;
+            if (randomPoint <= 0) {
+              chain.push(nextTopic);
+              currentPhrase = nextTopic;
+              break;
+            }
+          }
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    
+    return chain;
+  }
+
+  // Fill template with contextually relevant content
+  fillTemplate(template, words) {
+    if (!template || !template.structure) {
+      return "I'm still learning how to respond appropriately.";
+    }
+    
+    // Clone the structure
+    const filledStructure = [...template.structure];
+    
+    // Get content word positions
+    const contentPositions = filledStructure
+      .map((token, index) => token === '[CONTENT]' ? index : -1)
+      .filter(pos => pos !== -1);
+    
+    if (contentPositions.length === 0) {
+      return filledStructure.join(' ');
+    }
+    
+    // Find contextually relevant words
+    let relevantWords = [...words];
+    
+    // Add words from semantic network (contextually related)
+    words.forEach(word => {
+      if (this.semanticNetwork.has(word)) {
+        const similarWords = this.getSimilarWords(word, 3);
+        relevantWords = relevantWords.concat(similarWords);
+      }
+    });
+    
+    // Add words from topic chains
+    for (const word of words) {
+      const chain = this.getTopicChain(word, 2);
+      relevantWords = relevantWords.concat(chain);
+    }
+    
+    // Add words from conversation memory
+    const recentConversation = this.conversationMemory
+      .slice(-3)
+      .filter(entry => entry.isUser)
+      .map(entry => entry.text);
+    
+    recentConversation.forEach(text => {
+      const conversationWords = text.toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 3);
+      
+      relevantWords = relevantWords.concat(conversationWords);
+    });
+    
+    // Remove duplicates
+    relevantWords = [...new Set(relevantWords)];
+    
+    // Fill content positions
+    contentPositions.forEach((position, index) => {
+      // Try to use existing content mapping first
+      if (template.contentMap && template.contentMap.has(position)) {
+        filledStructure[position] = template.contentMap.get(position);
+        return;
+      }
+      
+      // Otherwise use relevant words or fallbacks
+      if (relevantWords.length > 0) {
+        // Use different words for different positions
+        const wordIndex = index % relevantWords.length;
+        filledStructure[position] = relevantWords[wordIndex];
+      } else {
+        // Fallback content words
+        const fallbacks = ['idea', 'topic', 'concept', 'information', 'subject'];
+        filledStructure[position] = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+      }
+    });
+    
+    // Convert to proper sentence, resolving any template tags
+    return this.convertTemplateToSentence(filledStructure, template.type);
+  }
+
+  // Convert template array to proper sentence
+  convertTemplateToSentence(structureArray, sentenceType) {
+    // Handle other template tags besides [CONTENT]
+    const sentence = structureArray
+      .map((token, index) => {
+        if (token.startsWith('[') && token.endsWith(']')) {
+          // Handle special tags
+          switch (token) {
+            case '[ARTICLE]':
+              return ['a', 'the', 'this', 'that'][Math.floor(Math.random() * 4)];
+            case '[PREPOSITION]':
+              return ['in', 'on', 'with', 'about', 'for', 'through', 'between', 'among', 'by'][Math.floor(Math.random() * 9)];
+            case '[PRONOUN]':
+              return ['I', 'you', 'it', 'they', 'we', 'this', 'that', 'these', 'those'][Math.floor(Math.random() * 9)];
+            case '[CONJUNCTION]':
+              return ['and', 'but', 'or', 'because', 'so', 'yet', 'however', 'while', 'although'][Math.floor(Math.random() * 9)];
+            case '[VERB_HELPER]':
+              return ['is', 'are', 'can', 'will', 'might', 'should', 'would', 'could', 'must'][Math.floor(Math.random() * 9)];
+            case '[VERB_ING]':
+              return ['thinking', 'exploring', 'considering', 'analyzing', 'understanding', 'investigating', 'examining', 'observing', 'studying'][Math.floor(Math.random() * 9)];
+            case '[VERB_PAST]':
+              return ['learned', 'discovered', 'found', 'observed', 'noticed', 'realized', 'understood', 'recognized', 'identified'][Math.floor(Math.random() * 9)];
+            case '[ADVERB]':
+              return ['carefully', 'quickly', 'interestingly', 'notably', 'significantly', 'remarkably', 'clearly', 'definitely', 'certainly'][Math.floor(Math.random() * 9)];
+            case '[QUESTION_WORD]':
+              return ['what', 'why', 'how', 'when', 'where', 'which', 'who', 'whose', 'whom'][Math.floor(Math.random() * 9)];
+            default:
+              // If tag isn't recognized, remove it
+              return '';
+          }
+        }
+        
+        // Not a tag, return as is
+        return token;
+      })
+      .filter(token => token !== ''); // Remove empty tokens
+    
+    // Join words properly
+    let result = sentence.join(' ')
+      .replace(/\s+/g, ' ') // Remove extra spaces
+      .replace(/ ,/g, ',')  // Fix comma spacing
+      .replace(/ \./g, '.') // Fix period spacing
+      .replace(/ \?/g, '?') // Fix question mark spacing
+      .replace(/ !/g, '!')  // Fix exclamation mark spacing
+      .trim();
+    
+    // Add proper ending punctuation if missing
+    if (!result.endsWith('.') && !result.endsWith('?') && !result.endsWith('!')) {
+      if (sentenceType === 'question') {
+        result += '?';
+      } else if (sentenceType === 'command') {
+        result += '.';
+      } else {
+        result += '.';
+      }
+    }
+    
+    // Capitalize first letter
+    return result.charAt(0).toUpperCase() + result.slice(1);
+  }
+
+  // Generate a contextual response to user input
+  generateResponse(input) {
+    // Process input and update semantic network
+    const words = this.processInput(input);
+    
+    // Detect emotion
+    const emotion = this.detectEmotion(input);
+    
+    // Find appropriate template
+    const template = this.findRelevantTemplate(words, emotion);
+    
+    // Fill template with contextually relevant content
+    const response = this.fillTemplate(template, words);
+    
+    // Add the bot's response to conversation memory
+    this.processInput(response, false);
+    
+    return response;
+  }
+
+  // Memory decay function to prevent overfitting
+  decayMemory(decayFactor = 0.9) {
+    // Decay semantic network weights
+    for (const [word, nodeData] of this.semanticNetwork.entries()) {
+      // Decay association strengths
+      for (const [assocWord, strength] of nodeData.associations.entries()) {
+        const newStrength = strength * decayFactor;
+        if (newStrength < 0.05) {
+          nodeData.associations.delete(assocWord);
+        } else {
+          nodeData.associations.set(assocWord, newStrength);
+        }
+      }
+      
+      // Remove node if it has no associations
+      if (nodeData.associations.size === 0) {
+        this.semanticNetwork.delete(word);
+      }
+    }
+    
+    // Decay topic chain weights
+    for (const [phrase, connections] of this.topicChains.entries()) {
+      for (const [targetPhrase, data] of connections.entries()) {
+        const newWeight = data.weight * decayFactor;
+        if (newWeight < 0.05) {
+          connections.delete(targetPhrase);
+        } else {
+          data.weight = newWeight;
+          connections.set(targetPhrase, data);
+        }
+      }
+      
+      // Remove topic if it has no connections
+      if (connections.size === 0) {
+        this.topicChains.delete(phrase);
+      }
+    }
+    
+    return {
+      semanticNetworkSize: this.semanticNetwork.size,
+      topicChainsSize: this.topicChains.size
+    };
+  }
+}
+
+// Simple sentiment analyzer
+class SentimentAnalyzer {
+  constructor() {
+    this.positiveWords = new Set([
+      'good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic', 'terrific',
+      'love', 'like', 'enjoy', 'happy', 'glad', 'delighted', 'pleased', 'excited',
+      'beautiful', 'brilliant', 'outstanding', 'perfect', 'impressive', 'exceptional'
+    ]);
+    
+    this.negativeWords = new Set([
+      'bad', 'terrible', 'awful', 'horrible', 'dreadful', 'poor', 'mediocre',
+      'hate', 'dislike', 'annoyed', 'angry', 'upset', 'sad', 'unhappy', 'disappointed',
+      'frustrated', 'irritated', 'disgusted', 'worthless', 'useless', 'unpleasant'
+    ]);
+  }
+  
+  analyze(text) {
+    const words = text.toLowerCase().split(/\s+/);
+    let score = 0;
+    
+    words.forEach(word => {
+      if (this.positiveWords.has(word)) score += 1;
+      if (this.negativeWords.has(word)) score -= 1;
+    });
+    
+    return {
+      score: score,
+      sentiment: score > 0 ? 'positive' : (score < 0 ? 'negative' : 'neutral')
+    };
+  }
+}
+
+// Export the engine
+window.AdvancedContextualEngine = AdvancedContextualEngine;
+
+// Integration with existing Cleverbot code
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize the advanced engine
+  const advancedEngine = new AdvancedContextualEngine();
+  
+  // Store a reference globally for debugging
+  window.advancedEngine = advancedEngine;
+  
+  // Initialize with existing context data
+  if (window.contextMapper) {
+    advancedEngine.initialize(window.contextMapper, window.phraseMap);
+    console.log("Advanced contextual engine initialized with existing data");
+  }
+  
+  // Add UI elements for advanced features
+  const controlsDiv = document.createElement('div');
+  controlsDiv.className = 'mt-4 p-4 border rounded-xl bg-indigo-50';
+  controlsDiv.innerHTML = `
+    <h3 class="font-semibold text-indigo-600 mb-2">Advanced Response Controls</h3>
+    <div class="flex gap-4">
+      <div class="flex items-center">
+        <label for="coherenceSlider" class="text-sm mr-2">Novelty/Coherence:</label>
+        <input type="range" id="coherenceSlider" min="0" max="100" value="70" class="w-32">
+      </div>
+      <button id="resetAdvancedEngine" class="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition">
+        Reset Engine
+      </button>
+      <button id="toggleDebugging" class="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition">
+        Show Debugging
+      </button>
+    </div>
+    <div id="debuggingOutput" class="mt-2 text-xs text-gray-600 hidden"></div>
+  `;
+  
+  // Add the controls after the similarity insights
+  const similarityInsights = document.getElementById('similarityInsights');
+  if (similarityInsights && similarityInsights.parentNode) {
+    similarityInsights.parentNode.after(controlsDiv);
+  }
+  
+  // Set up event handlers
+  const coherenceSlider = document.getElementById('coherenceSlider');
+  if (coherenceSlider) {
+    coherenceSlider.addEventListener('input', function() {
+      advancedEngine.responseCoherence = parseInt(this.value) / 100;
+    });
+  }
+  
+  const resetButton = document.getElementById('resetAdvancedEngine');
+  if (resetButton) {
+    resetButton.addEventListener('click', function() {
+      if (confirm('This will reset the advanced engine. Continue?')) {
+        advancedEngine.initialize(window.contextMapper, window.phraseMap);
+        alert('Advanced engine reset complete.');
+      }
+    });
+  }
+  
+  const toggleDebuggingButton = document.getElementById('toggleDebugging');
+  const debuggingOutput = document.getElementById('debuggingOutput');
+  if (toggleDebuggingButton && debuggingOutput) {
+    toggleDebuggingButton.addEventListener('click', function() {
+      debuggingOutput.classList.toggle('hidden');
+      if (!debuggingOutput.classList.contains('hidden')) {
+        updateDebuggingInfo();
+      }
+    });
+  }
+  
+  function updateDebuggingInfo() {
+    if (debuggingOutput.classList.contains('hidden')) return;
+    
+    const stats = {
+      templateVariants: advancedEngine.templateVariants.length,
+      semanticNetworkSize: advancedEngine.semanticNetwork.size,
+      topicChainsSize: advancedEngine.topicChains.size,
+      conversationMemory: advancedEngine.conversationMemory.length,
+      usedTemplates: advancedEngine.usedTemplates.size
+    };
+    
+    debuggingOutput.innerHTML = `
+      <div class="grid grid-cols-2 gap-2">
+        <div>Templates: ${stats.templateVariants}</div>
+        <div>Semantic Nodes: ${stats.semanticNetworkSize}</div>
+        <div>Topic Chains: ${stats.topicChainsSize}</div>
+        <div>Conversation Memory: ${stats.conversationMemory}</div>
+        <div>Template Cache: ${stats.usedTemplates}</div>
+      </div>
+    `;
+  }
+  
+  // Override the original sendInput function to use the advanced engine
+  const originalSendInput = window.sendInput;
+  
+  window.sendInput = async function() {
+    const input = userInput.value.trim();
+    if (!input) return;
+
+    addMessage('You', input);
+    userInput.value = '';
+    showTyping();
+
+    try {
+      // Run original Wikipedia lookups
+      const words = input.toLowerCase().split(/\s+/);
+      let lookupPromises = words.map(async word => {
+        if (word.length > 3 && !['this', 'that', 'with', 'from'].includes(word)) {
+          return {
+            word,
+            data: await wikipediaLearner.fetchWikipediaInfo(word)
+          };
+        }
+        return null;
+      });
+
+      // Process Wikipedia lookups
+      const lookupResults = await Promise.all(lookupPromises);
+      const validLookups = lookupResults.filter(result => result && result.data);
+
+      // Generate response using multiple learning techniques
+      let response = "";
+      
+      // Process Wikipedia content and update context systems
+      if (validLookups.length > 0) {
+        validLookups.forEach(lookup => {
+          if (lookup.data && lookup.data.description) {
+            // Process with original context mapper
+            contextMapper.processWikipediaText(lookup.data.description, lookup.word);
+			// Add learning insights to response
+            const learningInsight = wikipediaLearner.generateLearningInsights(lookup.word, lookup.data);
+            response += learningInsight + " ";
+            
+            // Also update advanced engine with the same data
+            advancedEngine.processInput(lookup.data.description, false);
+          }
+        });
+      }
+
+      // Generate more contextual response using the advanced engine
+      const advancedResponse = advancedEngine.generateResponse(input);
+      
+      // Combine responses or choose the best one
+      if (response.length > 0) {
+        // If we have Wikipedia content, add the advanced response
+        response += " " + advancedResponse;
+      } else {
+        // Otherwise just use the advanced response
+        response = advancedResponse;
+      }
+
+      // Add bot message
+      addMessage('Bot', response);
+
+      // Learn from the interaction with original systems
+      const tokens = tokenize(input);
+      tokens.forEach(([key, value]) => {
+        // Update training data
+        trainingData.push({ input: key, output: value });
+        updatePhraseMap(key, value);
+      });
+
+      // Retrain neural network
+      net.train(trainingData, { 
+        iterations: 100, 
+        errorThresh: 0.02 
+      });
+
+      // Save memory
+      saveMemory();
+      
+      // Update visualizations
+      updateContextVisualizations();
+      updateDebuggingInfo();
+
+    } catch (error) {
+      console.error('Input processing error:', error);
+      addMessage('Bot', 'Sorry, I encountered an error processing your input.');
+    } finally {
+      hideTyping();
+      drawGraph();
+    }
+  };
+  
+  // Schedule periodic memory decay to prevent overfitting
+  setInterval(() => {
+    advancedEngine.decayMemory(0.95);
+    updateDebuggingInfo();
+  }, 300000); // Every 5 minutes
+  
+  console.log("Advanced Contextual Engine enhancement loaded successfully!");
+});
+
+
+// Add integration with server endpoints for meta-cognition data
+async function syncServerMetaCognition() {
+  if (!window.metaCognitionSystem) return;
+  
+  try {
+    // Prepare meta-cognition data for server
+    const metaCognitionData = {
+      insightPatterns: Array.from(window.metaCognitionSystem.insightPatterns.entries()),
+      metaPatterns: window.metaCognitionSystem.metaPatterns,
+      performanceMetrics: window.metaCognitionSystem.performanceMetrics,
+      lastSync: Date.now()
+    };
+    
+    // Prepare LSTM model data (already handled by existing sync)
+    
+    // Construct the data to send
+    const dataToSend = {
+      metaCognition: metaCognitionData,
+      metaPatterns: window.metaCognitionSystem.metaPatterns,
+    };
+    
+    // Only sync if server sync is enabled
+    if (typeof SAVE_ENDPOINT !== 'undefined') {
+      console.log('Syncing meta-cognition data with server...');
+      
+      // Send data to server
+      const response = await fetch(SAVE_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataToSend)
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('Meta-cognition data synced successfully!', result.stats);
+        window.metaCognitionSystem._logSystemEvent('Server sync complete');
+      } else {
+        console.error('Failed to sync meta-cognition data:', result.message);
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing meta-cognition data:', error);
+  }
+}
+
+// Override the original saveMemory function to also sync meta-cognition data
+const superSaveMemory = window.saveMemory;
+window.saveMemory = function() {
+  // Call the enhanced save function
+  superSaveMemory();
+  
+  // Also sync with server if needed
+  syncServerMetaCognition();
+};
+
+// Add this script at the end of the existing code
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize meta-cognition system if not already initialized
+  if (!window.metaCognitionSystem) {
+    window.metaCognitionSystem = new MetaCognitionSystem().initialize();
+    console.log('Meta-cognition system initialized');
+  }
+  
+  // Add meta-cognition reset button to the control panel
+  const controlsDiv = document.querySelector('.flex.gap-4.mt-4');
+  if (controlsDiv) {
+    const resetMetaButton = document.createElement('button');
+    resetMetaButton.className = 'bg-purple-500 text-white px-4 py-2 rounded-xl hover:bg-purple-600 transition';
+    resetMetaButton.textContent = 'Reset Meta-Cognition';
+    resetMetaButton.onclick = function() {
+      if (confirm('Are you sure you want to reset the meta-cognition system? This will clear all learned patterns and insights.')) {
+        window.metaCognitionSystem = new MetaCognitionSystem().initialize();
+        alert('Meta-cognition system has been reset.');
+      }
+    };
+    
+    controlsDiv.appendChild(resetMetaButton);
+  }
+  
+  // Try to load from server
+  if (typeof GET_ENDPOINT !== 'undefined') {
+    // Load server data and initialize meta-cognition if available
+    fetch(GET_ENDPOINT)
+      .then(response => response.json())
+      .then(result => {
+        if (result.success && result.data) {
+          // Initialize meta-cognition with server data if available
+          if (result.data.metaCognition) {
+            console.log('Initializing meta-cognition from server data');
+            
+            // Parse meta-cognition data
+            const metaData = result.data.metaCognition;
+            
+            // Initialize with server data
+            if (window.metaCognitionSystem) {
+              window.metaCognitionSystem.insightPatterns = new Map(metaData.insightPatterns || []);
+              window.metaCognitionSystem.metaPatterns = metaData.metaPatterns || [];
+              window.metaCognitionSystem.performanceMetrics = metaData.performanceMetrics || window.metaCognitionSystem.performanceMetrics;
+              
+              window.metaCognitionSystem._logSystemEvent(
+                `Loaded ${window.metaCognitionSystem.insightPatterns.size} patterns, ${window.metaCognitionSystem.metaPatterns.length} meta-patterns from server`
+              );
+              
+              // Update UI
+              window.metaCognitionSystem._updateUIState();
+            }
+          }
+        }
+      })
+      .catch(error => {
+        console.error('Error loading server data:', error);
+      });
+  }
+});
+
+// Add this function to visualize semantic network
+function visualizeSemanticNetwork() {
+  if (!window.advancedEngine) return;
+  
+  const svg = d3.select("#memoryMap");
+  svg.selectAll("*").remove();
+  
+  const width = svg.node().clientWidth;
+  const height = svg.node().clientHeight;
+  const g = svg.append("g");
+  
+  // Prepare nodes and links
+  const nodes = [];
+  const links = [];
+  const nodeMap = {};
+  
+  // Get top words by frequency and connections
+  const topWords = Array.from(window.advancedEngine.semanticNetwork.entries())
+    .map(([word, data]) => ({
+      word,
+      connections: data.associations.size,
+      frequency: data.frequency
+    }))
+    .sort((a, b) => {
+      // Sort by weighted combination of connections and frequency
+      return (b.connections * 0.7 + b.frequency * 0.3) - 
+             (a.connections * 0.7 + a.frequency * 0.3);
+    })
+    .slice(0, 50); // Limit to 50 most important words
+  
+  // Create nodes
+  topWords.forEach(item => {
+    nodeMap[item.word] = {
+      id: item.word,
+      group: 1,
+      size: item.connections,
+      frequency: item.frequency
+    };
+    nodes.push(nodeMap[item.word]);
+  });
+  
+  // Create links
+  topWords.forEach(item => {
+    const wordData = window.advancedEngine.semanticNetwork.get(item.word);
+    if (wordData && wordData.associations) {
+      const topAssociations = Array.from(wordData.associations.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5); // Top 5 associations per word
+      
+      topAssociations.forEach(([assocWord, strength]) => {
+        if (nodeMap[assocWord]) {
+          links.push({
+            source: item.word,
+            target: assocWord,
+            value: strength * 10 // Scale up for visibility
+          });
+        }
+      });
+    }
+  });
+  
+  // Zoom functionality
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 4])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+  
+  svg.call(zoom);
+  
+  // Create force simulation
+  const simulation = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collision", d3.forceCollide().radius(d => 5 + Math.sqrt(d.size) * 2));
+  
+  // Draw links
+  const link = g.append("g")
+    .attr("stroke", "#999")
+    .attr("stroke-opacity", 0.6)
+    .selectAll("line")
+    .data(links)
+    .join("line")
+    .attr("stroke-width", d => Math.sqrt(d.value) * 0.5)
+    .attr("stroke", d => {
+      // Color by strength
+      const strength = d.value / 10;
+      if (strength > 3) return "#8b5cf6"; // Strong
+      if (strength > 1) return "#a78bfa"; // Medium
+      return "#c4b5fd"; // Weak
+    });
+  
+  // Draw nodes
+  const node = g.append("g")
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1.5)
+    .selectAll("circle")
+    .data(nodes)
+    .join("circle")
+    .attr("r", d => 5 + Math.sqrt(d.size) * 1.5)
+    .attr("fill", d => {
+      // Color by frequency
+      if (d.frequency > 10) return "#4f46e5";
+      if (d.frequency > 5) return "#6366f1";
+      return "#818cf8";
+    })
+    .call(drag(simulation));
+  
+  // Add labels
+  const label = g.append("g")
+    .selectAll("text")
+    .data(nodes)
+    .join("text")
+    .text(d => d.id)
+    .attr("font-size", d => 9 + Math.sqrt(d.size) * 0.2)
+    .attr("fill", "#333")
+    .attr("dx", d => 8 + Math.sqrt(d.size))
+    .attr("dy", 4);
+  
+  // Add tooltips
+  node.append("title")
+    .text(d => `${d.id}\nConnections: ${d.size}\nFrequency: ${d.frequency}`);
+  
+  // Update positions on tick
+  simulation.on("tick", () => {
+    link
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+    
+    node
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y);
+    
+    label
+      .attr("x", d => d.x)
+      .attr("y", d => d.y);
+  });
+  
+  // Store simulation reference
+  svg.node().__simulation = simulation;
+  svg.node().__zoom = zoom;
+  
+  // Add button to switch back to regular graph
+  const switchBackBtn = document.createElement('button');
+  switchBackBtn.textContent = 'Show Memory Graph';
+  switchBackBtn.className = 'bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition absolute top-10 right-10';
+  switchBackBtn.onclick = drawGraph;
+  
+  svg.node().parentNode.appendChild(switchBackBtn);
+  
+  return {
+    nodes: nodes.length,
+    links: links.length
+  };
+}
+
+// Add drag functionality for nodes
+function drag(simulation) {
+  function dragstarted(event) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    event.subject.fx = event.subject.x;
+    event.subject.fy = event.subject.y;
+  }
+
+  function dragged(event) {
+    event.subject.fx = event.x;
+    event.subject.fy = event.y;
+  }
+
+  function dragended(event) {
+    if (!event.active) simulation.alphaTarget(0);
+    event.subject.fx = null;
+    event.subject.fy = null;
+  }
+
+  return d3.drag()
+    .on("start", dragstarted)
+    .on("drag", dragged)
+    .on("end", dragended);
+}
+
+// Add the visualization button to UI
+document.addEventListener('DOMContentLoaded', function() {
+  const controlsDiv = document.querySelector('.flex.justify-between.items-center.mb-2');
+  
+  if (controlsDiv) {
+    const semanticButton = document.createElement('button');
+    semanticButton.textContent = 'Show Semantic Network';
+    semanticButton.className = 'bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg hover:bg-indigo-200 transition';
+    semanticButton.onclick = visualizeSemanticNetwork;
+    
+    controlsDiv.querySelector('.flex.gap-2').appendChild(semanticButton);
+  }
+});
+			
+			</script>
+
+<script>
+// Meta-Cognition System for Enhanced Cleverbot
+class MetaCognitionSystem {
+  constructor() {
+    this.enabled = false;
+    this.reflectionLevel = 3;
+    this.responseHistory = [];
+    this.maxHistorySize = 100;
+    this.insightPatterns = new Map();
+    this.performanceMetrics = {
+      coherence: 0,
+      diversity: 0,
+      relevance: 0,
+      depth: 0,
+      learning: 0
+    };
+    this.reflectionThreshold = 0.7;
+    this.lastAnalysisTime = Date.now();
+    this.selfImprovementLog = [];
+    this.recursionLimiter = {
+      maxDepth: 5,
+      currentDepth: 0,
+      timeout: 2000 // ms
+    };
+    this.conceptualModels = new Map();
+    this.thinkingTrace = [];
+    this.metaPatterns = [];
+    this.insightCounter = 0;
+  }
+  
+  // Initialize the meta-cognition system
+  initialize() {
+    console.log("Initializing Meta-Cognition System...");
+    this._setupEventListeners();
+    this._loadMetaCognitionData();
+    this._updateUIState();
+    
+    // Start periodic self-reflection
+    setInterval(() => this._periodicSelfReflection(), 60000); // Every minute
+    
+    return this;
+  }
+  
+  // Set up UI event listeners
+  _setupEventListeners() {
+    const toggleBtn = document.getElementById('toggleMetaCognition');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        this.enabled = !this.enabled;
+        this._updateUIState();
+        this._logSystemEvent(this.enabled ? 'Meta-cognition enabled' : 'Meta-cognition disabled');
+      });
+    }
+    
+    const analyzeBtn = document.getElementById('analyzePerformance');
+    if (analyzeBtn) {
+      analyzeBtn.addEventListener('click', () => {
+        this.analyzeSystemPerformance();
+      });
+    }
+  }
+  
+  // Update UI based on current state
+  _updateUIState() {
+    const toggleBtn = document.getElementById('toggleMetaCognition');
+    const progressBar = document.getElementById('metaCognitionProgress');
+    const insights = document.getElementById('metaCognitionInsights');
+    const reflectionLevel = document.getElementById('reflectionLevel');
+    
+    if (toggleBtn) {
+      toggleBtn.textContent = this.enabled ? 'Disable Meta-Cognition' : 'Enable Meta-Cognition';
+      toggleBtn.className = this.enabled 
+        ? 'bg-purple-500 text-white px-3 py-1 rounded-lg hover:bg-purple-600 transition'
+        : 'bg-purple-200 text-purple-700 px-3 py-1 rounded-lg hover:bg-purple-300 transition';
+    }
+    
+    if (progressBar) {
+      // Calculate overall system performance
+      const overallPerformance = Object.values(this.performanceMetrics).reduce((sum, val) => sum + val, 0) / 
+                                  Object.keys(this.performanceMetrics).length;
+      progressBar.style.width = `${Math.round(overallPerformance * 100)}%`;
+    }
+    
+    if (reflectionLevel) {
+      reflectionLevel.textContent = this.reflectionLevel;
+    }
+    
+    if (insights && this.selfImprovementLog.length > 0) {
+      insights.innerHTML = this.selfImprovementLog.slice(-5).map(entry => 
+        `<div class="text-xs mb-1">${entry}</div>`
+      ).join('');
+    }
+  }
+  
+  // Load previously saved meta-cognition data
+  async _loadMetaCognitionData() {
+    try {
+      const metaData = localStorage.getItem('cleverbotMetaCognition');
+      if (metaData) {
+        const parsedData = JSON.parse(metaData);
+        
+        // Restore from saved data
+        this.insightPatterns = new Map(parsedData.insightPatterns || []);
+        this.responseHistory = parsedData.responseHistory || [];
+        this.performanceMetrics = parsedData.performanceMetrics || this.performanceMetrics;
+        this.selfImprovementLog = parsedData.selfImprovementLog || [];
+        this.metaPatterns = parsedData.metaPatterns || [];
+        
+        // Log successful loading
+        this._logSystemEvent(`Loaded ${this.responseHistory.length} historical responses and ${this.insightPatterns.size} patterns`);
+      }
+    } catch (error) {
+      console.error('Error loading meta-cognition data:', error);
+      this._logSystemEvent(`Error loading meta-cognition data: ${error.message}`);
+    }
+  }
+  
+  // Save current meta-cognition state
+  _saveMetaCognitionData() {
+    try {
+      const dataToSave = {
+        insightPatterns: Array.from(this.insightPatterns.entries()),
+        responseHistory: this.responseHistory.slice(-this.maxHistorySize),
+        performanceMetrics: this.performanceMetrics,
+        selfImprovementLog: this.selfImprovementLog.slice(-50),
+        metaPatterns: this.metaPatterns.slice(-50),
+        lastSaved: Date.now()
+      };
+      
+      localStorage.setItem('cleverbotMetaCognition', JSON.stringify(dataToSave));
+    } catch (error) {
+      console.error('Error saving meta-cognition data:', error);
+    }
+  }
+  
+  // Process an input-response pair through meta-cognition system
+  processInteraction(input, response, responseSource) {
+    if (!this.enabled) return response;
+    
+    // Add to response history
+    this.responseHistory.push({
+      timestamp: Date.now(),
+      input,
+      response,
+      responseSource,
+      evaluation: null
+    });
+    
+    // Keep history within limit
+    if (this.responseHistory.length > this.maxHistorySize) {
+      this.responseHistory.shift();
+    }
+    
+    // Perform recursive thinking on response
+    const enhancedResponse = this._performRecursiveThinking(input, response);
+    
+    // Update metrics
+    this._updateResponseMetrics(input, enhancedResponse);
+    
+    // Save updated state
+    this._saveMetaCognitionData();
+    
+    return enhancedResponse;
+  }
+  
+  // Main recursive thinking method
+  _performRecursiveThinking(input, response) {
+    // Reset recursion limiter
+    this.recursionLimiter.currentDepth = 0;
+    this.thinkingTrace = [];
+    
+    // Begin recursive thinking process
+    return this._recursiveThoughtStep(input, response, "initial");
+  }
+  
+  // Single recursive thought step
+  _recursiveThoughtStep(input, currentResponse, stage) {
+    // Check recursion limits
+    if (this.recursionLimiter.currentDepth >= this.recursionLimiter.maxDepth) {
+      this._logSystemEvent(`Recursion depth limit reached (${this.recursionLimiter.maxDepth})`);
+      return currentResponse;
+    }
+    
+    // Increment recursion depth counter
+    this.recursionLimiter.currentDepth++;
+    
+    // Track thinking stages
+    this.thinkingTrace.push({
+      depth: this.recursionLimiter.currentDepth,
+      stage,
+      response: currentResponse
+    });
+    
+    // Apply different types of recursive thinking based on current depth
+    let enhancedResponse = currentResponse;
+    
+    switch (this.recursionLimiter.currentDepth) {
+      case 1:
+        // First level: Context and relevance refinement
+        enhancedResponse = this._improveRelevance(input, currentResponse);
+        return this._recursiveThoughtStep(input, enhancedResponse, "relevance");
+        
+      case 2:
+        // Second level: Coherence and structure enhancement
+        enhancedResponse = this._improveCoherence(input, currentResponse);
+        return this._recursiveThoughtStep(input, enhancedResponse, "coherence");
+        
+      case 3:
+        // Third level: Diversity and creativity enhancement
+        enhancedResponse = this._improveDiversity(input, currentResponse);
+        
+        // Only continue to deeper reflection if needed based on complexity
+        if (this._needsDeeperReflection(input)) {
+          return this._recursiveThoughtStep(input, enhancedResponse, "diversity");
+        }
+        return enhancedResponse;
+        
+      case 4:
+        // Fourth level: Deep conceptual refinement
+        enhancedResponse = this._improveConceptualDepth(input, currentResponse);
+        return this._recursiveThoughtStep(input, enhancedResponse, "depth");
+        
+      case 5:
+        // Final level: Meta-pattern analysis and innovation
+        enhancedResponse = this._improveWithMetaPatterns(input, currentResponse);
+        
+        // Log insight from deep reflection
+        if (enhancedResponse !== currentResponse) {
+          this.insightCounter++;
+          this._logSystemEvent(`Insight #${this.insightCounter}: Deep meta-reflection transformed response`);
+        }
+        return enhancedResponse;
+        
+      default:
+        return currentResponse;
+    }
+  }
+  
+  // Determine if input requires deeper reflection levels
+  _needsDeeperReflection(input) {
+    // Check if input contains complex questions or topics
+    const complexityIndicators = [
+      'why', 'how', 'explain', 'understand', 'meaning', 'purpose',
+      'difference', 'compare', 'relation', 'between', 'philosophy',
+      'concept', 'theory', 'define', 'ethical', 'moral'
+    ];
+    
+    const inputLower = input.toLowerCase();
+    const hasComplexityIndicator = complexityIndicators.some(word => inputLower.includes(word));
+    
+    // Check input length as a complexity proxy
+    const isLongInput = input.split(' ').length > 8;
+    
+    // Check if we have relevant meta-patterns
+    const hasRelevantPatterns = this.metaPatterns.some(pattern => 
+      pattern.keywords.some(keyword => inputLower.includes(keyword))
+    );
+    
+    return (hasComplexityIndicator && isLongInput) || hasRelevantPatterns;
+  }
+  
+  // Enhance response relevance to input
+  _improveRelevance(input, response) {
+    // Skip enhancement if response is already excellent
+    if (this._evaluateResponseQuality(input, response) > this.reflectionThreshold) {
+      return response;
+    }
+    
+    // Get key concepts from input and response
+    const inputConcepts = this._extractKeyConcepts(input);
+    const responseConcepts = this._extractKeyConcepts(response);
+    
+    // Find missing key concepts
+    const missingConcepts = inputConcepts.filter(concept => 
+      !responseConcepts.some(respConcept => respConcept.includes(concept) || concept.includes(respConcept))
+    );
+    
+    // If no significant concepts are missing, return original
+    if (missingConcepts.length === 0) {
+      return response;
+    }
+    
+    // Attempt to incorporate missing concepts
+    let enhancedResponse = response;
+    
+    // Simple enhancement: Add reference to missing concepts
+    if (missingConcepts.length > 0) {
+      // Look for relevant patterns in history to handle these concepts
+      const relevantPatterns = this._findRelevantPatterns(missingConcepts);
+      
+      if (relevantPatterns.length > 0) {
+        // Use pattern to enhance response
+        const pattern = relevantPatterns[0];
+        enhancedResponse = this._applyResponsePattern(response, pattern, missingConcepts);
+      } else {
+        // Simple addition if no patterns available
+        const missingConceptsText = missingConcepts.join(', ');
+        
+        // Avoid simply appending to prevent awkward responses
+        // Instead, look for good insertion points or sentence reformulation
+        if (response.includes('.')) {
+          // Insert before last sentence
+          const sentences = response.split('.');
+          if (sentences.length > 1) {
+            sentences.splice(sentences.length - 1, 0, 
+              ` I should also address ${missingConceptsText}`);
+            enhancedResponse = sentences.join('.');
+          }
+        } else {
+          // For short responses, consider the context more carefully
+          enhancedResponse = `${response} Regarding ${missingConceptsText}, it's also worth considering.`;
+        }
+      }
+    }
+    
+    return enhancedResponse;
+  }
+  
+  // Enhance response coherence
+  _improveCoherence(input, response) {
+    // Basic coherence checks
+    const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    
+    // Skip if response is very short or already coherent
+    if (sentences.length <= 1) {
+      return response;
+    }
+    
+    // Check for abrupt transitions between sentences
+    let enhancedResponse = response;
+    let hasImprovements = false;
+    
+    for (let i = 1; i < sentences.length; i++) {
+      const prevSentence = sentences[i-1].trim();
+      const currentSentence = sentences[i].trim();
+      
+      // Skip if either sentence is too short
+      if (prevSentence.split(' ').length < 3 || currentSentence.split(' ').length < 3) {
+        continue;
+      }
+      
+      // Check for semantic connection between adjacent sentences
+      const prevConcepts = this._extractKeyConcepts(prevSentence);
+      const currentConcepts = this._extractKeyConcepts(currentSentence);
+      
+      // Check concept overlap
+      const hasConceptOverlap = prevConcepts.some(c1 => 
+        currentConcepts.some(c2 => c1.includes(c2) || c2.includes(c1))
+      );
+      
+      if (!hasConceptOverlap) {
+        // Find transition phrases appropriate for the context
+        const transition = this._selectTransitionPhrase(prevSentence, currentSentence);
+        
+        // Apply transition
+        enhancedResponse = enhancedResponse.replace(
+          `${prevSentence}. ${currentSentence}`, 
+          `${prevSentence}. ${transition} ${currentSentence}`
+        );
+        
+        hasImprovements = true;
+      }
+    }
+    
+    // Check for structural improvement opportunity
+    if (!hasImprovements && sentences.length >= 3) {
+      // Consider restructuring for clarity if sentences share concepts but order seems random
+      const allConcepts = sentences.flatMap(s => this._extractKeyConcepts(s));
+      const conceptFrequency = allConcepts.reduce((acc, concept) => {
+        acc[concept] = (acc[concept] || 0) + 1;
+        return acc;
+      }, {});
+      
+      // Find recurring concepts that could form a thematic structure
+      const recurringConcepts = Object.entries(conceptFrequency)
+        .filter(([_, count]) => count > 1)
+        .map(([concept, _]) => concept);
+      
+      if (recurringConcepts.length > 0) {
+        // Log structural improvement
+        this._logSystemEvent(`Improved response coherence around concepts: ${recurringConcepts.slice(0, 3).join(', ')}`);
+      }
+    }
+    
+    return enhancedResponse;
+  }
+  
+  // Enhance response diversity
+  _improveDiversity(input, response) {
+    // Compare with recent responses to check for repetitiveness
+    const recentResponses = this.responseHistory
+      .slice(-10)
+      .filter(item => item.response !== response)
+      .map(item => item.response);
+    
+    if (recentResponses.length === 0) {
+      return response; // No comparison data
+    }
+    
+    // Check for repeated phrases or patterns
+    const responsePhrases = response.split(/[.!?]/).filter(s => s.trim().length > 0);
+    let hasRepetitivePatterns = false;
+    
+    for (const phrase of responsePhrases) {
+      if (phrase.split(' ').length < 4) continue; // Skip very short phrases
+      
+      // Check if similar phrases appear in recent responses
+      const similarity = recentResponses.some(recentResp => 
+        recentResp.includes(phrase) || this._calculateSimilarity(phrase, recentResp) > 0.7
+      );
+      
+      if (similarity) {
+        hasRepetitivePatterns = true;
+        break;
+      }
+    }
+    
+    if (!hasRepetitivePatterns) {
+      return response; // No need to improve diversity
+    }
+    
+    // If repetitive patterns found, attempt to diversify
+    // Extract key elements and rephrase them
+    const inputConcepts = this._extractKeyConcepts(input);
+    let enhancedResponse = response;
+    
+    // Find alternative expressions for repeated concepts
+    const conceptAlternatives = this._generateConceptAlternatives(inputConcepts);
+    
+    // Apply alternatives to diversify
+    for (const [concept, alternatives] of Object.entries(conceptAlternatives)) {
+      if (alternatives.length === 0) continue;
+      
+      // Select an alternative that hasn't been used recently
+      const unused = alternatives.find(alt => 
+        !recentResponses.some(recentResp => recentResp.includes(alt))
+      ) || alternatives[0];
+      
+      // Replace concept with alternative, being careful about word boundaries
+      const conceptRegex = new RegExp(`\b${concept}\b`, 'gi');
+      enhancedResponse = enhancedResponse.replace(conceptRegex, unused);
+    }
+    
+    // Log diversity improvement
+    if (enhancedResponse !== response) {
+      this._logSystemEvent('Improved response diversity by varying concept expressions');
+    }
+    
+    return enhancedResponse;
+  }
+  
+  // Enhance response with deeper conceptual understanding
+  _improveConceptualDepth(input, response) {
+    // Check if input contains deep questions or abstract topics
+    const inputLower = input.toLowerCase();
+    const abstractTopics = [
+      'philosophy', 'consciousness', 'meaning', 'purpose', 'ethics',
+      'morality', 'existence', 'reality', 'truth', 'knowledge',
+      'being', 'identity', 'nature', 'universe', 'concept'
+    ];
+    
+    const hasAbstractTopic = abstractTopics.some(topic => inputLower.includes(topic));
+    
+    if (!hasAbstractTopic) {
+      return response; // No need for deeper conceptual analysis
+    }
+    
+    // Extract key abstract concepts from input
+    const abstractConcepts = abstractTopics.filter(topic => inputLower.includes(topic));
+    
+    // Check if we have conceptual models for these topics
+    const relevantModels = abstractConcepts.filter(concept => this.conceptualModels.has(concept));
+    
+    if (relevantModels.length === 0) {
+      // No existing models, create a basic conceptual model from the response
+      for (const concept of abstractConcepts) {
+        this.conceptualModels.set(concept, {
+          relatedConcepts: this._extractKeyConcepts(response),
+          perspectives: [response],
+          lastUpdated: Date.now()
+        });
+      }
+      
+      // Log model creation
+      this._logSystemEvent(`Created initial conceptual models for: ${abstractConcepts.join(', ')}`);
+      return response;
+    }
+    
+    // We have relevant models, enhance response with deeper perspectives
+    let enhancedResponse = response;
+    const mainConcept = relevantModels[0]; // Focus on primary concept
+    const model = this.conceptualModels.get(mainConcept);
+    
+    // Generate a more nuanced response based on conceptual model
+    if (model.perspectives.length > 1) {
+      // Multiple perspectives available, integrate a secondary viewpoint
+      const existingPerspective = model.perspectives.find(p => response.includes(p));
+      const alternativePerspectives = model.perspectives.filter(p => p !== existingPerspective);
+      
+      if (alternativePerspectives.length > 0) {
+        // Select a complementary perspective
+        const altPerspective = alternativePerspectives[0];
+        
+        // Integrate the alternative perspective
+        if (enhancedResponse.includes('.')) {
+          const sentences = enhancedResponse.split('.');
+          sentences.splice(sentences.length - 1, 0, 
+            ` Another way to view ${mainConcept} is ${altPerspective}`);
+          enhancedResponse = sentences.join('.');
+        } else {
+          enhancedResponse += ` Another way to think about ${mainConcept} is ${altPerspective}`;
+        }
+        
+        // Log conceptual enhancement
+        this._logSystemEvent(`Enhanced response with deeper conceptual perspective on ${mainConcept}`);
+      }
+    }
+    
+    // Update the conceptual model with the current interaction
+    model.relatedConcepts = [...new Set([...model.relatedConcepts, ...this._extractKeyConcepts(input)])];
+    if (!model.perspectives.includes(response)) {
+      model.perspectives.push(response);
+    }
+    model.lastUpdated = Date.now();
+    this.conceptualModels.set(mainConcept, model);
+    
+    return enhancedResponse;
+  }
+  
+  // Apply meta-pattern improvements
+  _improveWithMetaPatterns(input, response) {
+    // Skip if no meta-patterns available
+    if (this.metaPatterns.length === 0) {
+      return response;
+    }
+    
+    const inputConcepts = this._extractKeyConcepts(input);
+    
+    // Find relevant meta-patterns
+    const relevantPatterns = this.metaPatterns.filter(pattern => 
+      pattern.keywords.some(keyword => 
+        inputConcepts.some(concept => concept.includes(keyword) || keyword.includes(concept))
+      )
+    );
+    
+    if (relevantPatterns.length === 0) {
+      return response;
+    }
+    
+    // Apply most relevant meta-pattern
+    const topPattern = relevantPatterns[0];
+    
+    // Different application strategies based on pattern type
+    switch (topPattern.type) {
+      case 'question-reframe':
+        if (!response.includes('?')) {
+          // Transform part of response into a question to deepen thinking
+          return this._transformToReflectiveQuestion(response, topPattern);
+        }
+        break;
+        
+      case 'perspective-shift':
+        // Add alternative perspective
+        return this._addAlternativePerspective(response, topPattern);
+        
+      case 'concept-elaboration':
+        // Elaborate on core concept
+        return this._elaborateOnConcept(response, inputConcepts, topPattern);
+        
+      case 'implicit-insight':
+        // Add implicit insight
+        return this._addImplicitInsight(response, topPattern);
+    }
+    
+    return response;
+  }
+  
+  // Transform response to include reflective question
+  _transformToReflectiveQuestion(response, pattern) {
+    // Split into sentences
+    const sentences = response.split(/[.!?]/).filter(s => s.trim().length > 0);
+    
+    // Skip if too short
+    if (sentences.length < 2) return response;
+    
+    // Get key concepts to question about
+    const concepts = this._extractKeyConcepts(response);
+    if (concepts.length === 0) return response;
+    
+    // Select a concept to question
+    const conceptToQuestion = concepts[0];
+    
+    // Create reflective question
+    const questionTemplates = [
+      `Have you considered how ${conceptToQuestion} might relate to wider contexts?`,
+      `What implications might ${conceptToQuestion} have beyond what we've discussed?`,
+      `How does your understanding of ${conceptToQuestion} influence your perspective?`,
+      `What further questions does this raise about ${conceptToQuestion}?`
+    ];
+    
+    const question = questionTemplates[Math.floor(Math.random() * questionTemplates.length)];
+    
+    // Add question to end of response
+    return response + ` ${question}`;
+  }
+  
+  // Add alternative perspective to response
+  _addAlternativePerspective(response, pattern) {
+    const transitions = [
+      "From another perspective,",
+      "Alternatively,",
+      "Looking at this differently,",
+      "Another way to see this is",
+      "A different viewpoint suggests"
+    ];
+    
+    const transition = transitions[Math.floor(Math.random() * transitions.length)];
+    const perspective = pattern.templates[Math.floor(Math.random() * pattern.templates.length)];
+    
+    // Add to end or as new paragraph
+    if (response.includes('.')) {
+      const sentences = response.split('.');
+      sentences.splice(sentences.length - 1, 0, ` ${transition} ${perspective}`);
+      return sentences.join('.');
+    }
+    
+    return `${response} ${transition} ${perspective}`;
+  }
+  
+  // Elaborate on key concept
+  _elaborateOnConcept(response, concepts, pattern) {
+    if (concepts.length === 0) return response;
+    
+    const concept = concepts[0];
+    const elaboration = pattern.templates[Math.floor(Math.random() * pattern.templates.length)]
+      .replace('{{concept}}', concept);
+    
+    // Find good place to insert elaboration
+    if (response.includes(concept) && response.includes('.')) {
+      // Insert after sentence containing the concept
+      const sentences = response.split('.');
+      for (let i = 0; i < sentences.length; i++) {
+        if (sentences[i].includes(concept)) {sentences.splice(i + 1, 0, ` ${elaboration}`);
+          return sentences.join('.');
+        }
+      }
+    }
+    
+    // Fallback: append to response
+    return `${response} ${elaboration}`;
+  }
+  
+  // Add an implicit insight that connects ideas in a new way
+  _addImplicitInsight(response, pattern) {
+    const insights = pattern.templates;
+    const insight = insights[Math.floor(Math.random() * insights.length)];
+    
+    // Add insight as a final thought
+    if (response.includes('.')) {
+      return response + ` ${insight}`;
+    }
+    
+    return `${response}. ${insight}`;
+  }
+  
+  // Extract key concepts from text
+  _extractKeyConcepts(text) {
+    // Simple concept extraction based on word frequency and importance
+    const words = text.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 3);
+      
+    // Filter out common stop words
+    const stopWords = ["this", "that", "these", "those", "there", "their", "they", "have", 
+                      "with", "from", "about", "some", "what", "when", "where", "which"];
+    
+    const filteredWords = words.filter(word => !stopWords.includes(word));
+    
+    // Count word frequencies
+    const wordCounts = {};
+    filteredWords.forEach(word => {
+      wordCounts[word] = (wordCounts[word] || 0) + 1;
+    });
+    
+    // Get top concepts (most frequent meaningful words)
+    return Object.entries(wordCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([word]) => word);
+  }
+  
+  // Select appropriate transition phrase based on context
+  _selectTransitionPhrase(sentence1, sentence2) {
+    // Analyze relationship between sentences
+    const s1Concepts = this._extractKeyConcepts(sentence1);
+    const s2Concepts = this._extractKeyConcepts(sentence2);
+    
+    // Check for contrast
+    const contrastIndicators = ["but", "however", "though", "although", "contrary"];
+    const s2Lower = sentence2.toLowerCase();
+    const hasContrast = contrastIndicators.some(word => s2Lower.includes(word));
+    
+    // Simple transition selection
+    if (hasContrast) {
+      return "However,";
+    }
+    
+    // Check for elaboration or example
+    if (s1Concepts.some(c => s2Concepts.includes(c))) {
+      const transitions = ["For example,", "Specifically,", "In particular,", "To elaborate,"];
+      return transitions[Math.floor(Math.random() * transitions.length)];
+    }
+    
+    // Default transitional phrases
+    const defaultTransitions = [
+      "Additionally,", "Furthermore,", "Moreover,", "Also,", "What's more,", 
+      "Building on this,", "In relation to this,"
+    ];
+    
+    return defaultTransitions[Math.floor(Math.random() * defaultTransitions.length)];
+  }
+  
+  // Find relevant response patterns for given concepts
+  _findRelevantPatterns(concepts) {
+    const patterns = [];
+    
+    // Check each stored pattern for relevance
+    for (const [patternKey, pattern] of this.insightPatterns.entries()) {
+      // Check if pattern concepts overlap with our target concepts
+      const patternConcepts = patternKey.split('|');
+      const overlap = patternConcepts.filter(pc => 
+        concepts.some(c => c.includes(pc) || pc.includes(c))
+      );
+      
+      if (overlap.length > 0) {
+        patterns.push({
+          key: patternKey,
+          pattern,
+          relevance: overlap.length / Math.max(patternConcepts.length, concepts.length)
+        });
+      }
+    }
+    
+    // Sort by relevance
+    return patterns.sort((a, b) => b.relevance - a.relevance);
+  }
+  
+  // Apply a response pattern to enhance a response
+  _applyResponsePattern(response, patternData, concepts) {
+    const { pattern } = patternData;
+    
+    // Skip if no template available
+    if (!pattern.template) {
+      return response;
+    }
+    
+    // Replace placeholders in template
+    let enhancedText = pattern.template;
+    
+    // Replace {{concept}} with appropriate concept
+    if (enhancedText.includes('{{concept}}') && concepts.length > 0) {
+      enhancedText = enhancedText.replace(/{{concept}}/g, concepts[0]);
+    }
+    
+    // Integrate with original response
+    if (response.includes('.')) {
+      // Add after a sentence break
+      const sentences = response.split('.');
+      sentences.splice(sentences.length - 1, 0, ` ${enhancedText}`);
+      return sentences.join('.');
+    }
+    
+    // For short responses, append with appropriate connection
+    return `${response}. ${enhancedText}`;
+  }
+  
+  // Generate alternatives for concepts to increase diversity
+  _generateConceptAlternatives(concepts) {
+    const alternatives = {};
+    
+    for (const concept of concepts) {
+      // Skip very short concepts
+      if (concept.length < 4) continue;
+      
+      alternatives[concept] = [];
+      
+      // Check for synonyms or related terms in semantic network
+      if (window.advancedEngine && window.advancedEngine.semanticNetwork) {
+        // Get related words from semantic network
+        const semanticNode = window.advancedEngine.semanticNetwork.get(concept);
+        if (semanticNode && semanticNode.associations) {
+          const relatedTerms = Array.from(semanticNode.associations.keys())
+            .slice(0, 3);
+          alternatives[concept].push(...relatedTerms);
+        }
+      }
+      
+      // Check for alternatives from conceptual models
+      if (this.conceptualModels.has(concept)) {
+        const model = this.conceptualModels.get(concept);
+        alternatives[concept].push(...model.relatedConcepts);
+      }
+      
+      // Add simple variants using common modifiers
+      alternatives[concept].push(`the ${concept}`);
+      alternatives[concept].push(`this ${concept}`);
+      alternatives[concept].push(`such ${concept}`);
+      
+      // Ensure uniqueness
+      alternatives[concept] = [...new Set(alternatives[concept])];
+    }
+    
+    return alternatives;
+  }
+  
+  // Evaluate response quality based on multiple metrics
+  _evaluateResponseQuality(input, response) {
+    // Quick early return for very short inputs/responses
+    if (input.length < 5 || response.length < 10) {
+      return 0.5; // Neutral score for minimal content
+    }
+    
+    // Multiple quality dimensions
+    const metrics = {
+      relevance: this._calculateRelevance(input, response),
+      coherence: this._calculateCoherence(response),
+      diversity: this._calculateDiversity(response),
+      depth: response.length / 200 // Simple proxy for depth (max score at 200+ chars)
+    };
+    
+    // Weighted average of metrics
+    const weights = { relevance: 0.4, coherence: 0.3, diversity: 0.2, depth: 0.1 };
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    for (const [metric, value] of Object.entries(metrics)) {
+      weightedSum += value * weights[metric];
+      totalWeight += weights[metric];
+    }
+    
+    return weightedSum / totalWeight;
+  }
+  
+  // Calculate relevance between input and response
+  _calculateRelevance(input, response) {
+    const inputConcepts = this._extractKeyConcepts(input);
+    const responseConcepts = this._extractKeyConcepts(response);
+    
+    // No concepts found (too short)
+    if (inputConcepts.length === 0 || responseConcepts.length === 0) {
+      return 0.5;
+    }
+    
+    // Count concept overlap
+    let overlapCount = 0;
+    for (const inConcept of inputConcepts) {
+      for (const resConcept of responseConcepts) {
+        if (inConcept.includes(resConcept) || resConcept.includes(inConcept)) {
+          overlapCount++;
+          break;
+        }
+      }
+    }
+    
+    return overlapCount / inputConcepts.length;
+  }
+  
+  // Calculate internal coherence of response
+  _calculateCoherence(response) {
+    // Split into sentences
+    const sentences = response.split(/[.!?]/).filter(s => s.trim().length > 0);
+    
+    // Too short to evaluate coherence
+    if (sentences.length <= 1) {
+      return 0.8; // Assume coherent if just one sentence
+    }
+    
+    // Check adjacent sentence similarity for abrupt transitions
+    let coherenceScore = 0;
+    for (let i = 1; i < sentences.length; i++) {
+      const similarity = this._calculateSimilarity(sentences[i-1], sentences[i]);
+      coherenceScore += similarity;
+    }
+    
+    return coherenceScore / (sentences.length - 1);
+  }
+  
+  // Calculate diversity compared to recent responses
+  _calculateDiversity(response) {
+    const recentResponses = this.responseHistory
+      .slice(-5)
+      .filter(item => item.response !== response)
+      .map(item => item.response);
+    
+    if (recentResponses.length === 0) {
+      return 1.0; // Max diversity if no comparison data
+    }
+    
+    // Calculate similarity to recent responses
+    let totalSimilarity = 0;
+    for (const recentResp of recentResponses) {
+      totalSimilarity += this._calculateSimilarity(response, recentResp);
+    }
+    
+    const avgSimilarity = totalSimilarity / recentResponses.length;
+    return 1.0 - avgSimilarity; // Convert similarity to diversity
+  }
+  
+  // Calculate similarity between two texts
+  _calculateSimilarity(text1, text2) {
+    // Simple Jaccard similarity on words
+    const words1 = new Set(text1.toLowerCase().split(/\s+/));
+    const words2 = new Set(text2.toLowerCase().split(/\s+/));
+    
+    // Calculate intersection and union
+    const intersection = new Set([...words1].filter(x => words2.has(x)));
+    const union = new Set([...words1, ...words2]);
+    
+    return intersection.size / union.size;
+  }
+  
+  // Update response metrics based on input/response pair
+  _updateResponseMetrics(input, response) {
+    // Update performance metrics with exponential moving average
+    const alpha = 0.2; // Smoothing factor
+    const newMetrics = {
+      coherence: this._calculateCoherence(response),
+      diversity: this._calculateDiversity(response),
+      relevance: this._calculateRelevance(input, response),
+      depth: Math.min(1.0, response.length / 200),
+      // Learning is based on growth of patterns and insights
+      learning: Math.min(1.0, (this.insightPatterns.size + this.metaPatterns.length) / 100)
+    };
+    
+    // Update each metric
+    for (const [metric, value] of Object.entries(newMetrics)) {
+      this.performanceMetrics[metric] = alpha * value + (1 - alpha) * this.performanceMetrics[metric];
+    }
+    
+    // Update UI
+    this._updateUIState();
+  }
+  
+  // Perform periodic self-reflection
+  _periodicSelfReflection() {
+    if (!this.enabled) return;
+    
+    // Skip if last analysis was recent
+    const timeSinceLastAnalysis = Date.now() - this.lastAnalysisTime;
+    if (timeSinceLastAnalysis < 60000) return; // At least 1 minute between reflections
+    
+    // Need sufficient data for meaningful reflection
+    if (this.responseHistory.length < 5) return;
+    
+    this.lastAnalysisTime = Date.now();
+    
+    // Identify patterns and insights
+    this._identifyResponsePatterns();
+    this._identifyMetaPatterns();
+    
+    // Log self-reflection event
+    this._logSystemEvent(`Self-reflection complete. ${this.insightPatterns.size} patterns, ${this.metaPatterns.length} meta-patterns identified.`);
+  }
+  
+  // Identify useful response patterns from history
+  _identifyResponsePatterns() {
+    // Need at least 5 interactions
+    if (this.responseHistory.length < 5) return;
+    
+    // Get high-quality responses
+    const qualityThreshold = 0.7;
+    const goodResponses = this.responseHistory.filter(item => {
+      // Calculate quality if not already evaluated
+      if (item.evaluation === null) {
+        item.evaluation = this._evaluateResponseQuality(item.input, item.response);
+      }
+      return item.evaluation >= qualityThreshold;
+    });
+    
+    if (goodResponses.length < 3) return; // Not enough good responses yet
+    
+    // Extract patterns from good responses
+    for (const item of goodResponses) {
+      const inputConcepts = this._extractKeyConcepts(item.input);
+      const responseConcepts = this._extractKeyConcepts(item.response);
+      
+      // Create a pattern key from the most important concepts
+      const patternConcepts = [...new Set([...inputConcepts, ...responseConcepts])].slice(0, 3);
+      if (patternConcepts.length < 2) continue; // Need at least 2 concepts for a meaningful pattern
+      
+      const patternKey = patternConcepts.sort().join('|');
+      
+      // Check if pattern already exists
+      if (!this.insightPatterns.has(patternKey)) {
+        // Create new pattern
+        this.insightPatterns.set(patternKey, {
+          concepts: patternConcepts,
+          template: this._extractResponseTemplate(item.response, responseConcepts),
+          examples: [item.response],
+          created: Date.now(),
+          usageCount: 0
+        });
+      } else {
+        // Update existing pattern
+        const pattern = this.insightPatterns.get(patternKey);
+        if (!pattern.examples.includes(item.response)) {
+          pattern.examples.push(item.response);
+        }
+        this.insightPatterns.set(patternKey, pattern);
+      }
+    }
+  }
+  
+  // Extract template from a good response
+  _extractResponseTemplate(response, concepts) {
+    // Create a template by replacing specific concepts with placeholders
+    let template = response;
+    
+    for (const concept of concepts) {
+      // Only replace standalone instances of the concept (with word boundaries)
+      const conceptRegex = new RegExp(`\b${concept}\b`, 'gi');
+      template = template.replace(conceptRegex, '{{concept}}');
+    }
+    
+    return template;
+  }
+  
+  // Identify higher-level meta-patterns
+  _identifyMetaPatterns() {
+    // Need sufficient response patterns first
+    if (this.insightPatterns.size < 5) return;
+    
+    // Find recurring structural elements across patterns
+    const templates = Array.from(this.insightPatterns.values())
+      .map(pattern => pattern.template);
+    
+    // Identify question patterns (responses with questions)
+    this._extractQuestionMetaPatterns(templates);
+    
+    // Identify perspective-shift patterns
+    this._extractPerspectiveShiftPatterns(templates);
+    
+    // Identify concept elaboration patterns
+    this._extractConceptElaborationPatterns(templates);
+    
+    // Identify implicit insight patterns
+    this._extractImplicitInsightPatterns(templates);
+  }
+  
+  // Extract question patterns
+  _extractQuestionMetaPatterns(templates) {
+    const questionTemplates = templates.filter(t => t.includes('?'));
+    if (questionTemplates.length < 2) return;
+    
+    // Extract question forms
+    const questions = [];
+    for (const template of questionTemplates) {
+      const parts = template.split('?');
+      // Get the question part (last part before question mark)
+      for (let i = 0; i < parts.length - 1; i++) {
+        const questionText = parts[i].split('.').pop().trim();
+        if (questionText.length > 10) {
+          questions.push(questionText + '?');
+        }
+      }
+    }
+    
+    if (questions.length < 2) return;
+    
+    // Create question meta-pattern if not exists
+    const existingPattern = this.metaPatterns.find(p => p.type === 'question-reframe');
+    
+    if (!existingPattern) {
+      this.metaPatterns.push({
+        type: 'question-reframe',
+        templates: questions,
+        keywords: this._extractCommonWords(questions),
+        created: Date.now()
+      });
+      
+      this._logSystemEvent(`Identified question meta-pattern with ${questions.length} templates`);
+    } else {
+      // Update existing pattern with new templates
+      const newTemplates = questions.filter(q => !existingPattern.templates.includes(q));
+      existingPattern.templates.push(...newTemplates);
+      
+      // Update keywords
+      existingPattern.keywords = this._extractCommonWords(existingPattern.templates);
+    }
+  }
+  
+  // Extract perspective shift patterns
+  _extractPerspectiveShiftPatterns(templates) {
+    const perspectiveMarkers = [
+      "from another perspective", "alternatively", "on the other hand",
+      "looking at this differently", "another way to see this"
+    ];
+    
+    const perspectiveTemplates = templates.filter(t => 
+      perspectiveMarkers.some(marker => t.toLowerCase().includes(marker))
+    );
+    
+    if (perspectiveTemplates.length < 2) return;
+    
+    // Extract the perspective shift parts
+    const perspectives = [];
+    for (const template of perspectiveTemplates) {
+      for (const marker of perspectiveMarkers) {
+        if (template.toLowerCase().includes(marker)) {
+          const parts = template.toLowerCase().split(marker);
+          if (parts.length > 1) {
+            // Get text after the marker until next punctuation
+            const perspectiveText = parts[1].split(/[.!?]/).shift().trim();
+            if (perspectiveText.length > 10) {
+              perspectives.push(perspectiveText);
+            }
+          }
+        }
+      }
+    }
+    
+    if (perspectives.length < 2) return;
+    
+    // Create meta-pattern or update existing
+    const existingPattern = this.metaPatterns.find(p => p.type === 'perspective-shift');
+    
+    if (!existingPattern) {
+      this.metaPatterns.push({
+        type: 'perspective-shift',
+        templates: perspectives,
+        keywords: this._extractCommonWords(perspectives),
+        created: Date.now()
+      });
+      
+      this._logSystemEvent(`Identified perspective-shift meta-pattern with ${perspectives.length} templates`);
+    } else {
+      // Update existing pattern
+      const newTemplates = perspectives.filter(p => !existingPattern.templates.includes(p));
+      existingPattern.templates.push(...newTemplates);
+      existingPattern.keywords = this._extractCommonWords(existingPattern.templates);
+    }
+  }
+  
+  // Extract concept elaboration patterns
+  _extractConceptElaborationPatterns(templates) {
+    // Look for concept elaboration patterns where {{concept}} is explained
+    const elaborationTemplates = templates.filter(t => 
+      t.includes('{{concept}}') && 
+      (t.includes('means') || t.includes('refers to') || t.includes('is defined as'))
+    );
+    
+    if (elaborationTemplates.length < 2) return;
+    
+    // Create meta-pattern or update existing
+    const existingPattern = this.metaPatterns.find(p => p.type === 'concept-elaboration');
+    
+    if (!existingPattern) {
+      this.metaPatterns.push({
+        type: 'concept-elaboration',
+        templates: elaborationTemplates,
+        keywords: this._extractCommonWords(elaborationTemplates),
+        created: Date.now()
+      });
+      
+      this._logSystemEvent(`Identified concept-elaboration meta-pattern with ${elaborationTemplates.length} templates`);
+    } else {
+      // Update existing pattern
+      const newTemplates = elaborationTemplates.filter(p => !existingPattern.templates.includes(p));
+      existingPattern.templates.push(...newTemplates);
+      existingPattern.keywords = this._extractCommonWords(existingPattern.templates);
+    }
+  }
+  
+  // Extract implicit insight patterns
+  _extractImplicitInsightPatterns(templates) {
+    const insightMarkers = [
+      "interestingly", "surprisingly", "notably", "importantly",
+      "significantly", "critically", "fundamentally"
+    ];
+    
+    const insightTemplates = templates.filter(t => 
+      insightMarkers.some(marker => t.toLowerCase().includes(marker))
+    );
+    
+    if (insightTemplates.length < 2) return;
+    
+    // Extract insight statements
+    const insights = [];
+    for (const template of insightTemplates) {
+      for (const marker of insightMarkers) {
+        if (template.toLowerCase().includes(marker)) {
+          const parts = template.toLowerCase().split(marker);
+          if (parts.length > 1) {
+            // Get text after the marker until next punctuation
+            const insightText = parts[1].split(/[.!?]/).shift().trim();
+            if (insightText.length > 10) {
+              insights.push(marker + " " + insightText);
+            }
+          }
+        }
+      }
+    }
+    
+    if (insights.length < 2) return;
+    
+    // Create meta-pattern or update existing
+    const existingPattern = this.metaPatterns.find(p => p.type === 'implicit-insight');
+    
+    if (!existingPattern) {
+      this.metaPatterns.push({
+        type: 'implicit-insight',
+        templates: insights,
+        keywords: this._extractCommonWords(insights),
+        created: Date.now()
+      });
+      
+      this._logSystemEvent(`Identified implicit-insight meta-pattern with ${insights.length} templates`);
+    } else {
+      // Update existing pattern
+      const newTemplates = insights.filter(p => !existingPattern.templates.includes(p));
+      existingPattern.templates.push(...newTemplates);
+      existingPattern.keywords = this._extractCommonWords(existingPattern.templates);
+    }
+  }
+  
+  // Extract common words from a set of texts
+  _extractCommonWords(texts) {
+    // Flatten all texts into word array
+    const allWords = texts.join(' ').toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 3);
+      
+    // Filter stop words
+    const stopWords = ["this", "that", "these", "those", "there", "their", "they", "have", 
+                      "with", "from", "about", "some", "what", "when", "where", "which"];
+    
+    const filteredWords = allWords.filter(word => !stopWords.includes(word));
+    
+    // Count frequencies
+    const wordCounts = {};
+    filteredWords.forEach(word => {
+      wordCounts[word] = (wordCounts[word] || 0) + 1;
+    });
+    
+    // Get words that appear in at least 20% of texts
+    const threshold = Math.max(2, Math.floor(texts.length * 0.2));
+    
+    return Object.entries(wordCounts)
+      .filter(([_, count]) => count >= threshold)
+      .map(([word]) => word);
+  }
+  
+  // Analyze overall system performance
+  analyzeSystemPerformance() {
+    // Ensure we have enough data
+    if (this.responseHistory.length < 5) {
+      this._logSystemEvent("Not enough interaction history for performance analysis");
+      return false;
+    }
+    
+    // Calculate overall metrics
+    const overallQuality = this.responseHistory
+      .slice(-10) // Last 10 interactions
+      .map(item => {
+        if (item.evaluation === null) {
+          item.evaluation = this._evaluateResponseQuality(item.input, item.response);
+        }
+        return item.evaluation;
+      })
+      .reduce((sum, quality) => sum + quality, 0) / 10;
+    
+    // Identify improvement opportunities
+    const weakestMetric = Object.entries(this.performanceMetrics)
+      .sort(([_, a], [__, b]) => a - b)[0][0];
+    
+    // Generate improvement strategy
+    let strategyText = ``;
+    switch (weakestMetric) {
+      case 'coherence':
+        strategyText = `Focusing on improving response coherence by strengthening transitions between ideas and ensuring consistent concept flow.`;
+        this.reflectionLevel = Math.min(5, this.reflectionLevel + 1);
+        break;
+        
+      case 'diversity':
+        strategyText = `Prioritizing response diversity by incorporating more varied expression patterns and reducing repetition.`;
+        break;
+        
+      case 'relevance':
+        strategyText = `Enhancing input relevance by more closely analyzing query concepts and ensuring they're addressed in responses.`;
+        break;
+        
+      case 'depth':
+        strategyText = `Increasing conceptual depth by developing more nuanced perspectives on abstract concepts.`;
+        this.reflectionLevel = Math.min(5, this.reflectionLevel + 1);
+        break;
+        
+      case 'learning':
+        strategyText = `Accelerating pattern learning by more actively identifying and generalizing from successful response structures.`;
+        break;
+    }
+    
+    // Log performance analysis
+    const analysisText = `
+      Performance Analysis:
+      Overall quality: ${(overallQuality * 100).toFixed(1)}%
+      Strongest area: ${Object.entries(this.performanceMetrics).sort(([_, a], [__, b]) => b - a)[0][0]}
+      Improvement focus: ${weakestMetric}
+      Strategy: ${strategyText}
+    `;
+    
+    this._logSystemEvent(analysisText);
+    
+    // Update UI
+    const insights = document.getElementById('metaCognitionInsights');
+    if (insights) {
+      insights.innerHTML = analysisText.split('
+').map(line => 
+        `<div class="text-xs mb-1">${line.trim()}</div>`
+      ).join('');
+    }
+    
+    // Update reflection level display
+    const reflectionLevel = document.getElementById('reflectionLevel');
+    if (reflectionLevel) {
+      reflectionLevel.textContent = this.reflectionLevel;
+    }
+    
+    return true;
+  }
+  
+  // Log system event to improvement log
+  _logSystemEvent(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = `[${timestamp}] ${message}`;
+    
+    console.log(`Meta-Cognition: ${logEntry}`);
+    this.selfImprovementLog.push(logEntry);
+    
+    // Keep log size limited
+    if (this.selfImprovementLog.length > 100) {
+      this.selfImprovementLog.shift();
+    }
+    
+    // Update insights display if visible
+    const insights = document.getElementById('metaCognitionInsights');
+    if (insights && !insights.classList.contains('hidden')) {
+      insights.innerHTML = this.selfImprovementLog.slice(-5).map(entry => 
+        `<div class="text-xs mb-1">${entry}</div>`
+      ).join('');
+    }
+  }
+}
+
+// Create and initialize the meta-cognition system
+window.metaCognitionSystem = new MetaCognitionSystem().initialize();
+
+// Override the original sendInput function to incorporate meta-cognition
+const originalSendInput = window.sendInput;
+
+window.sendInput = async function() {
+  const input = userInput.value.trim();
+  if (!input) return;
+
+  addMessage('You', input);
+  userInput.value = '';
+  showTyping();
+
+  try {
+    // Run original Wikipedia lookups and processing
+    const words = input.toLowerCase().split(/\s+/);
+    let lookupPromises = words.map(async word => {
+      if (word.length > 3 && !['this', 'that', 'with', 'from'].includes(word)) {
+        return {
+          word,
+          data: await wikipediaLearner.fetchWikipediaInfo(word)
+        };
+      }
+      return null;
+    });
+
+    // Process Wikipedia lookups
+    const lookupResults = await Promise.all(lookupPromises);
+    const validLookups = lookupResults.filter(result => result && result.data);
+
+    // Generate response using multiple learning techniques
+    let response = "";
+    
+    // Process Wikipedia content and update context systems
+    if (validLookups.length > 0) {
+      validLookups.forEach(lookup => {
+        if (lookup.data && lookup.data.description) {
+          // Process with context mapper
+          contextMapper.processWikipediaText(lookup.data.description, lookup.word);
+          
+          // Add learning insights to response
+          const learningInsight = wikipediaLearner.generateLearningInsights(lookup.word, lookup.data);
+          response += learningInsight + " ";
+          
+          // Update advanced engine with the same data
+          if (window.advancedEngine) {
+            window.advancedEngine.processInput(lookup.data.description, false);
+          }
+        }
+      });
+    }
+
+    // Generate response from appropriate engine
+    let engineResponse = "";
+    let responseSource = "";
+    
+    if (window.advancedEngine) {
+      // Use advanced contextual engine if available
+      engineResponse = window.advancedEngine.generateResponse(input);
+      responseSource = "advancedEngine";
+    } else {
+      // Fallback to original context mapper
+      engineResponse = contextMapper.generateContextualResponse(input);
+      responseSource = "contextMapper";
+    }
+    
+    // Combine responses
+    if (response.length > 0) {
+      // If we have Wikipedia content, add the engine response
+      response += " " + engineResponse;
+    } else {
+      // Otherwise just use the engine response
+      response = engineResponse;
+    }
+    
+    // Apply meta-cognitive enhancement if enabled
+    if (window.metaCognitionSystem && window.metaCognitionSystem.enabled) {
+      response = window.metaCognitionSystem.processInteraction(input, response, responseSource);
+    }
+
+    // Add bot message
+    addMessage('Bot', response);
+
+    // Learn from the interaction with original systems
+    const tokens = tokenize(input);
+    tokens.forEach(([key, value]) => {
+      // Update training data
+      trainingData.push({ input: key, output: value });
+      updatePhraseMap(key, value);
+    });
+
+    // Retrain neural network
+    net.train(trainingData, { 
+      iterations: 100, 
+      errorThresh: 0.02 
+    });
+
+    // Save memory
+    saveMemory();
+    
+    // Update visualizations
+    updateContextVisualizations();
+
+  } catch (error) {
+    console.error('Input processing error:', error);
+    addMessage('Bot', 'Sorry, I encountered an error processing your input.');
+  } finally {
+    hideTyping();
+    drawGraph();
+  }
+};
+
+function updateSimilarityInsights(input, response) {
+  const similarityInsights = document.getElementById('similarityInsights');
+  if (!similarityInsights) return;
+  
+  // Get similarity with recent responses
+  const similarResponses = findSimilarPhrases(input);
+  
+  if (similarResponses.length === 0) {
+    similarityInsights.innerHTML = '<div class="text-gray-500">No similar previous interactions found.</div>';
+    return;
+  }
+  
+  // Calculate similarity between current response and similar past responses
+  const responseSimilarities = similarResponses.map(item => ({
+    phrase: item.phrase,
+    output: item.output,
+    similarity: calculateSimilarity(response, item.output)
+  }));
+  
+  // Sort by similarity to current response
+  responseSimilarities.sort((a, b) => b.similarity - a.similarity);
+  
+  // Display insights
+  const insightHtml = `
+    <div class="text-sm font-medium text-indigo-600 mb-1">Response similarity analysis:</div>
+    ${responseSimilarities.slice(0, 3).map(item => `
+      <div class="mb-2">
+        <div class="flex items-center">
+          <span class="text-xs font-medium">Input: "${item.phrase}"</span>
+          <span class="similarity-badge">${Math.round(item.similarity * 100)}% similar</span>
+        </div>
+        <div class="text-xs text-gray-600 ml-2">Response: "${item.output.substring(0, 60)}${item.output.length > 60 ? '...' : ''}"</div>
+      </div>
+    `).join('')}
+    
+    ${window.metaCognitionSystem && window.metaCognitionSystem.enabled ? 
+      `<div class="text-xs text-purple-600 mt-2">
+        Meta-cognition has analyzed this pattern and made ${responseSimilarities[0].similarity > 0.7 ? 'significant' : 'minor'} adjustments to the response.
+      </div>` : ''}
+  `;
+  
+  similarityInsights.innerHTML = insightHtml;
+  
+  // If meta-cognition is enabled, record this similarity pattern
+  if (window.metaCognitionSystem && window.metaCognitionSystem.enabled) {
+    // Find high-similarity responses that might indicate repetitive patterns
+    const highSimilarityResponses = responseSimilarities.filter(item => item.similarity > 0.6);
+    
+    if (highSimilarityResponses.length > 0) {
+      window.metaCognitionSystem._logSystemEvent(
+        `Detected ${highSimilarityResponses.length} similar previous responses (${Math.round(highSimilarityResponses[0].similarity * 100)}% max similarity)`
+      );
+    }
+  }
+}
+
+// Modify the original saveMemory function to also save meta-cognition data
+const originalSaveMemory = window.saveMemory;
+
+window.saveMemory = function() {
+  // Call the original function
+  originalSaveMemory();
+  
+  // Save meta-cognition data if available
+  if (window.metaCognitionSystem) {
+    window.metaCognitionSystem._saveMetaCognitionData();
+  }
+};
+</script>
+
+</body>
+</html>
