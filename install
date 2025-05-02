@@ -1,0 +1,5 @@
+Run in a http server setting with php and mysql.
+
+In both php files correct the database settings and url link varibles to match your own settings.
+
+Two folders need to be made models and data.
